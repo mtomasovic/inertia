@@ -20,9 +20,16 @@ function App() {
     // Calculate responsive dimensions
     React.useEffect(() => {
         const calculateDimensions = () => {
-            const padding = 40; // Padding around the game box
+            // Detect if we're on a mobile device
+            const isMobile = window.innerWidth <= 768 || window.innerHeight <= 768;
+            
+            // Use minimal padding on mobile to maximize playable area
+            const padding = isMobile ? 10 : 40; // Minimal padding on mobile
+            // Reduce space reserved for title and instructions on mobile
+            const uiSpace = isMobile ? 100 : 200; // Even less UI space on mobile
+            
             const maxViewportWidth = window.innerWidth - padding;
-            const maxViewportHeight = window.innerHeight - padding - 200; // Extra space for title and instructions
+            const maxViewportHeight = window.innerHeight - padding - uiSpace;
             
             // Calculate maximum possible dimensions while maintaining aspect ratio
             let newWidth = maxViewportWidth;
@@ -35,11 +42,13 @@ function App() {
             }
             
             // Ensure minimum size for playability
-            const minWidth = 300;
+            const minWidth = isMobile ? 280 : 300;
             const minHeight = minWidth / ASPECT_RATIO;
             
-            newWidth = Math.max(minWidth, Math.min(newWidth, BASE_WIDTH * 1.5)); // Max 1.5x the base size
-            newHeight = Math.max(minHeight, Math.min(newHeight, BASE_HEIGHT * 1.5));
+            // Allow much larger multipliers on mobile for maximum screen usage
+            const maxMultiplier = isMobile ? 3.5 : 1.5; // Much larger on mobile (up to 3.5x)
+            newWidth = Math.max(minWidth, Math.min(newWidth, BASE_WIDTH * maxMultiplier));
+            newHeight = Math.max(minHeight, Math.min(newHeight, BASE_HEIGHT * maxMultiplier));
             
             setDimensions({
                 width: Math.round(newWidth),
@@ -96,6 +105,8 @@ function App() {
     const [pathData, setPathData] = React.useState(null);
     const [burnedPath, setBurnedPath] = React.useState([]);
     const [fireParticles, setFireParticles] = React.useState([]);
+    const [touchStart, setTouchStart] = React.useState(null);
+    const [isSwipeSupported, setIsSwipeSupported] = React.useState(false);
 
     // Generate random path
     const generateRandomPath = React.useCallback(() => {
@@ -280,6 +291,70 @@ function App() {
         setBurnedPath([]); // Reset burned path
         setFireParticles([]); // Reset fire particles
     };
+
+    // Handle swipe gestures for mobile
+    const handleTouchStart = React.useCallback((e) => {
+        if (!e.touches || e.touches.length === 0) return;
+        
+        const touch = e.touches[0];
+        setTouchStart({
+            x: touch.clientX,
+            y: touch.clientY,
+            timestamp: Date.now()
+        });
+        setIsSwipeSupported(true);
+    }, []);
+
+    const handleTouchEnd = React.useCallback((e) => {
+        if (!touchStart || !e.changedTouches || e.changedTouches.length === 0) return;
+
+        const touch = e.changedTouches[0];
+        const touchEnd = {
+            x: touch.clientX,
+            y: touch.clientY,
+            timestamp: Date.now()
+        };
+
+        const deltaX = touchEnd.x - touchStart.x;
+        const deltaY = touchEnd.y - touchStart.y;
+        const deltaTime = touchEnd.timestamp - touchStart.timestamp;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        // Only register as swipe if:
+        // - Distance is significant (minimum 30px)
+        // - Time is reasonable (not too slow, not too fast)
+        // - Not currently in game over/won state
+        if (distance > 30 && deltaTime > 50 && deltaTime < 800 && !gameOver && !gameWon) {
+            // Calculate swipe velocity based on distance and time
+            const baseVelocity = Math.min(distance / deltaTime * 15, 8); // Cap max velocity
+            
+            // Normalize direction
+            const directionX = deltaX / distance;
+            const directionY = deltaY / distance;
+            
+            // Apply velocity boost to current velocity
+            setVelocity(prevVelocity => ({
+                x: prevVelocity.x + (directionX * baseVelocity),
+                y: prevVelocity.y + (directionY * baseVelocity)
+            }));
+        }
+
+        setTouchStart(null);
+    }, [touchStart, gameOver, gameWon]);
+
+    // Add touch event listeners
+    React.useEffect(() => {
+        const gameElement = document.getElementById('game-container');
+        if (gameElement) {
+            gameElement.addEventListener('touchstart', handleTouchStart, { passive: false });
+            gameElement.addEventListener('touchend', handleTouchEnd, { passive: false });
+            
+            return () => {
+                gameElement.removeEventListener('touchstart', handleTouchStart);
+                gameElement.removeEventListener('touchend', handleTouchEnd);
+            };
+        }
+    }, [handleTouchStart, handleTouchEnd]);
 
     // Add burned section to path when ball moves
     const addBurnedSection = React.useCallback((x, y) => {
@@ -650,39 +725,42 @@ function App() {
             textAlign: 'center'
         }}>
             <h1 style={{ 
-                fontSize: '3rem', 
+                fontSize: window.innerWidth <= 768 ? '2rem' : '3rem', 
                 fontWeight: 'bold', 
                 color: '#333',
-                marginBottom: '30px'
+                marginBottom: window.innerWidth <= 768 ? '15px' : '30px'
             }}>
                 Inertia
             </h1>
             
             {/* Game Screen Box */}
-            <div style={{
-                width: dimensions.width,
-                height: dimensions.height,
-                border: '3px solid #333',
-                borderRadius: '10px',
-                position: 'relative',
-                backgroundColor: '#0a0a0a', // Dark abyss background
-                backgroundImage: `
-                    radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 0.3) 0%, transparent 50%),
-                    radial-gradient(circle at 80% 70%, rgba(75, 0, 130, 0.2) 0%, transparent 40%),
-                    radial-gradient(circle at 40% 80%, rgba(139, 0, 0, 0.2) 0%, transparent 35%),
-                    radial-gradient(circle at 70% 20%, rgba(25, 25, 112, 0.3) 0%, transparent 45%),
-                    linear-gradient(45deg, rgba(0, 0, 0, 0.9) 0%, rgba(25, 25, 25, 0.8) 100%)
-                `,
-                boxShadow: `
-                    0 4px 8px rgba(0,0,0,0.3),
-                    inset 0 0 50px rgba(139, 0, 0, 0.1),
-                    inset 0 0 100px rgba(0, 0, 0, 0.8)
-                `,
-                boxSizing: 'border-box',
-                maxWidth: '95vw', // Ensure it doesn't exceed viewport
-                maxHeight: '70vh',
-                overflow: 'hidden'
-            }}>
+            <div 
+                id="game-container"
+                style={{
+                    width: dimensions.width,
+                    height: dimensions.height,
+                    border: '3px solid #333',
+                    borderRadius: '10px',
+                    position: 'relative',
+                    backgroundColor: '#0a0a0a', // Dark abyss background
+                    backgroundImage: `
+                        radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 0.3) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 70%, rgba(75, 0, 130, 0.2) 0%, transparent 40%),
+                        radial-gradient(circle at 40% 80%, rgba(139, 0, 0, 0.2) 0%, transparent 35%),
+                        radial-gradient(circle at 70% 20%, rgba(25, 25, 112, 0.3) 0%, transparent 45%),
+                        linear-gradient(45deg, rgba(0, 0, 0, 0.9) 0%, rgba(25, 25, 25, 0.8) 100%)
+                    `,
+                    boxShadow: `
+                        0 4px 8px rgba(0,0,0,0.3),
+                        inset 0 0 50px rgba(139, 0, 0, 0.1),
+                        inset 0 0 100px rgba(0, 0, 0, 0.8)
+                    `,
+                    boxSizing: 'border-box',
+                    maxWidth: '95vw', // Ensure it doesn't exceed viewport
+                    maxHeight: '70vh',
+                    overflow: 'hidden',
+                    touchAction: 'manipulation' // Optimize for touch
+                }}>
                 {/* Abyss animated background effect */}
                 <div style={{
                     position: 'absolute',
@@ -867,31 +945,40 @@ function App() {
             
             {/* Instructions */}
             <div style={{ 
-                marginTop: '20px', 
+                marginTop: window.innerWidth <= 768 ? '10px' : '20px', 
                 color: '#666',
-                fontSize: '1.1rem',
+                fontSize: window.innerWidth <= 768 ? '0.9rem' : '1.1rem',
                 textAlign: 'center'
             }}>
-                <p style={{ margin: '5px 0' }}>Guide the ball along the green path from start (blue) to finish (red)</p>
-                <p style={{ margin: '5px 0', fontSize: '0.9rem' }}>Use WASD keys to move the ball</p>
+                <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0' }}>
+                    Guide the ball along the green path from start (blue) to finish (red)
+                </p>
+                <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0', fontSize: '0.85rem' }}>
+                    {window.innerWidth <= 768 ? 'WASD keys or swipe to move' : 'Use WASD keys to move the ball'}
+                </p>
+                {isSwipeSupported && window.innerWidth > 768 && (
+                    <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic', color: '#28a745' }}>
+                        Swipe to launch the ball in any direction!
+                    </p>
+                )}
                 {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
                     <button 
                         onClick={requestTiltPermission}
                         style={{
-                            marginTop: '10px',
-                            padding: '10px 20px',
+                            marginTop: window.innerWidth <= 768 ? '5px' : '10px',
+                            padding: window.innerWidth <= 768 ? '8px 16px' : '10px 20px',
                             backgroundColor: '#007bff',
                             color: 'white',
                             border: 'none',
                             borderRadius: '5px',
                             cursor: 'pointer',
-                            fontSize: '1rem'
+                            fontSize: window.innerWidth <= 768 ? '0.85rem' : '1rem'
                         }}
                     >
                         Enable Tilt Controls
                     </button>
                 )}
-                {tiltSupported && (
+                {tiltSupported && window.innerWidth > 768 && (
                     <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic' }}>
                         Tilt controls enabled - tilt your device to move
                     </p>
