@@ -91,6 +91,189 @@ function App() {
     const [keysPressed, setKeysPressed] = React.useState(new Set());
     const [tiltSupported, setTiltSupported] = React.useState(false);
     const [tilt, setTilt] = React.useState({ x: 0, y: 0 });
+    const [gameOver, setGameOver] = React.useState(false);
+    const [gameWon, setGameWon] = React.useState(false);
+    const [pathData, setPathData] = React.useState(null);
+
+    // Generate random path
+    const generateRandomPath = React.useCallback(() => {
+        const PATH_WIDTH = BALL_SIZE + 20; // Wider path for easier gameplay
+        const MIN_SEGMENT_LENGTH = 100; // Longer minimum segments
+        const MAX_SEGMENT_LENGTH = 200; // Much longer maximum segments
+        const BORDER_BUFFER = BALL_SIZE * 3; // Much larger buffer from borders so ball can fall off
+        
+        const path = [];
+        let currentX = BORDER_BUFFER; // Start well away from left edge
+        let currentY = PLAYABLE_HEIGHT / 2; // Start from center height
+        let isHorizontal = true; // Start with horizontal movement
+        
+        // Add starting point
+        path.push({ x: currentX, y: currentY });
+        
+        // Generate fewer, longer path segments
+        while (currentX < PLAYABLE_WIDTH - BORDER_BUFFER * 1.5) {
+            // Create much longer segments
+            let segmentLength = MIN_SEGMENT_LENGTH + Math.random() * (MAX_SEGMENT_LENGTH - MIN_SEGMENT_LENGTH);
+            
+            if (isHorizontal) {
+                // Move horizontally (left to right) - use more space
+                const remainingWidth = PLAYABLE_WIDTH - currentX - BORDER_BUFFER;
+                segmentLength = Math.min(segmentLength, remainingWidth * 0.8); // Use 80% of remaining width
+                
+                currentX += segmentLength;
+                path.push({ x: currentX, y: currentY });
+                
+                // Switch to vertical movement
+                isHorizontal = false;
+            } else {
+                // Move vertically (up or down) - use full height range
+                const goUp = Math.random() < 0.5;
+                const direction = goUp ? -1 : 1;
+                
+                // Use much more of the vertical space but stay away from borders
+                const minY = BORDER_BUFFER;
+                const maxY = PLAYABLE_HEIGHT - BORDER_BUFFER;
+                const availableHeight = maxY - minY;
+                
+                // Make vertical movements span more of the height
+                let newY = currentY + (direction * segmentLength);
+                
+                // If we hit boundaries, use the full available space
+                if (newY < minY) {
+                    newY = minY;
+                } else if (newY > maxY) {
+                    newY = maxY;
+                }
+                
+                // Ensure we move at least 25% of the available height
+                const minMovement = availableHeight * 0.25;
+                if (Math.abs(newY - currentY) < minMovement) {
+                    const availableUp = currentY - minY;
+                    const availableDown = maxY - currentY;
+                    
+                    if (availableUp > availableDown) {
+                        newY = Math.max(minY, currentY - Math.max(minMovement, availableUp * 0.7));
+                    } else {
+                        newY = Math.min(maxY, currentY + Math.max(minMovement, availableDown * 0.7));
+                    }
+                }
+                
+                currentY = newY;
+                path.push({ x: currentX, y: currentY });
+                
+                // Switch to horizontal movement
+                isHorizontal = true;
+            }
+            
+            // Reduce randomness - make fewer, more deliberate turns
+            if (Math.random() < 0.15) { // Reduced from 0.3 to 0.15
+                segmentLength *= 0.7; // Less dramatic reduction
+            }
+        }
+        
+        // Final segment to reach the end - use full width but stay away from border
+        const finalX = PLAYABLE_WIDTH - BORDER_BUFFER;
+        if (!isHorizontal) {
+            // If we ended on a vertical segment, add a horizontal one to reach the end
+            path.push({ x: finalX, y: currentY });
+        } else {
+            // Extend the current horizontal segment to the end
+            path[path.length - 1] = { x: finalX, y: currentY };
+        }
+        
+        return {
+            points: path,
+            width: PATH_WIDTH,
+            start: path[0],
+            end: path[path.length - 1]
+        };
+    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT, BALL_SIZE]);
+
+    // Initialize path on component mount and dimension changes
+    React.useEffect(() => {
+        const newPath = generateRandomPath();
+        setPathData(newPath);
+        // Reset ball to start of path
+        setBallPosition({
+            x: newPath.start.x - BALL_SIZE / 2,
+            y: newPath.start.y - BALL_SIZE / 2
+        });
+        setVelocity({ x: 0, y: 0 });
+        setGameOver(false);
+        setGameWon(false);
+    }, [generateRandomPath]);
+
+    // Check if ball is on path
+    const isOnPath = React.useCallback((ballX, ballY) => {
+        if (!pathData) return true;
+        
+        const ballCenterX = ballX + BALL_SIZE / 2;
+        const ballCenterY = ballY + BALL_SIZE / 2;
+        
+        // Check distance from ball center to path
+        for (let i = 0; i < pathData.points.length - 1; i++) {
+            const p1 = pathData.points[i];
+            const p2 = pathData.points[i + 1];
+            
+            // Calculate distance from point to line segment
+            const A = ballCenterX - p1.x;
+            const B = ballCenterY - p1.y;
+            const C = p2.x - p1.x;
+            const D = p2.y - p1.y;
+            
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+            if (lenSq !== 0) param = dot / lenSq;
+            
+            let xx, yy;
+            if (param < 0) {
+                xx = p1.x;
+                yy = p1.y;
+            } else if (param > 1) {
+                xx = p2.x;
+                yy = p2.y;
+            } else {
+                xx = p1.x + param * C;
+                yy = p1.y + param * D;
+            }
+            
+            const dx = ballCenterX - xx;
+            const dy = ballCenterY - yy;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance <= pathData.width / 2) {
+                return true;
+            }
+        }
+        return false;
+    }, [pathData, BALL_SIZE]);
+
+    // Check if ball reached the end
+    const hasReachedEnd = React.useCallback((ballX, ballY) => {
+        if (!pathData) return false;
+        
+        const ballCenterX = ballX + BALL_SIZE / 2;
+        const ballCenterY = ballY + BALL_SIZE / 2;
+        const endX = pathData.end.x;
+        const endY = pathData.end.y;
+        
+        const distance = Math.sqrt((ballCenterX - endX) ** 2 + (ballCenterY - endY) ** 2);
+        return distance <= pathData.width / 2;
+    }, [pathData, BALL_SIZE]);
+
+    // Reset game
+    const resetGame = () => {
+        const newPath = generateRandomPath();
+        setPathData(newPath);
+        setBallPosition({
+            x: newPath.start.x - BALL_SIZE / 2,
+            y: newPath.start.y - BALL_SIZE / 2
+        });
+        setVelocity({ x: 0, y: 0 });
+        setGameOver(false);
+        setGameWon(false);
+    };
 
     React.useEffect(() => {
         document.title = "Inertia";
@@ -346,6 +529,18 @@ function App() {
                     }
 
                     setBallPosition({ x: newX, y: newY });
+                    
+                    // Check game conditions
+                    if (!isOnPath(newX, newY) && !gameOver && !gameWon) {
+                        setGameOver(true);
+                        return { x: 0, y: 0 }; // Stop movement
+                    }
+                    
+                    if (hasReachedEnd(newX, newY) && !gameOver && !gameWon) {
+                        setGameWon(true);
+                        return { x: 0, y: 0 }; // Stop movement
+                    }
+                    
                     return { x: updatedVelocityX, y: updatedVelocityY };
                 });
                 
@@ -354,7 +549,7 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed]);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon]);
 
     return (
         <Container style={{ 
@@ -387,6 +582,48 @@ function App() {
                 maxWidth: '95vw', // Ensure it doesn't exceed viewport
                 maxHeight: '70vh'
             }}>
+                {/* Path */}
+                {pathData && (
+                    <svg
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            pointerEvents: 'none'
+                        }}
+                    >
+                        {/* Path line */}
+                        <path
+                            d={`M ${pathData.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                            stroke="#28a745"
+                            strokeWidth={pathData.width}
+                            fill="none"
+                            strokeLinecap="round"
+                            strokeLinejoin="miter"
+                        />
+                        {/* Start marker */}
+                        <circle
+                            cx={pathData.start.x}
+                            cy={pathData.start.y}
+                            r={pathData.width / 2 + 2}
+                            fill="none"
+                            stroke="#007bff"
+                            strokeWidth="3"
+                        />
+                        {/* End marker */}
+                        <circle
+                            cx={pathData.end.x}
+                            cy={pathData.end.y}
+                            r={pathData.width / 2 + 2}
+                            fill="none"
+                            stroke="#dc3545"
+                            strokeWidth="3"
+                        />
+                    </svg>
+                )}
+                
                 {/* Ball */}
                 <div style={{
                     width: BALL_SIZE,
@@ -396,8 +633,9 @@ function App() {
                     position: 'absolute',
                     left: ballPosition.x,
                     top: ballPosition.y,
-                    transition: 'all 0.1s ease',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    transition: gameOver || gameWon ? 'none' : 'all 0.1s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                    zIndex: 10
                 }} />
             </div>
             
@@ -408,7 +646,8 @@ function App() {
                 fontSize: '1.1rem',
                 textAlign: 'center'
             }}>
-                <p style={{ margin: '5px 0' }}>Use WASD keys to move the ball</p>
+                <p style={{ margin: '5px 0' }}>Guide the ball along the green path from start (blue) to finish (red)</p>
+                <p style={{ margin: '5px 0', fontSize: '0.9rem' }}>Use WASD keys to move the ball</p>
                 {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
                     <button 
                         onClick={requestTiltPermission}
@@ -432,6 +671,94 @@ function App() {
                     </p>
                 )}
             </div>
+            
+            {/* Game Over Modal */}
+            {gameOver && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100vw',
+                    height: '100vh',
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: 'white',
+                        padding: '30px',
+                        borderRadius: '15px',
+                        textAlign: 'center',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                        maxWidth: '90vw'
+                    }}>
+                        <h2 style={{ color: '#dc3545', marginBottom: '20px', fontSize: '2rem' }}>Game Over!</h2>
+                        <p style={{ marginBottom: '25px', fontSize: '1.2rem', color: '#666' }}>
+                            You fell off the path. Try again!
+                        </p>
+                        <button
+                            onClick={resetGame}
+                            style={{
+                                backgroundColor: '#007bff',
+                                color: 'white',
+                                border: 'none',
+                                padding: '12px 30px',
+                                fontSize: '1.1rem',
+                                borderRadius: '8px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                </div>
+            )}
+            
+            {/* Game Won Modal */}
+            {gameWon && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100vw',
+                    height: '100vh',
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: 'white',
+                        padding: '30px',
+                        borderRadius: '15px',
+                        textAlign: 'center',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                        maxWidth: '90vw'
+                    }}>
+                        <h2 style={{ color: '#28a745', marginBottom: '20px', fontSize: '2rem' }}>Congratulations! 🎉</h2>
+                        <p style={{ marginBottom: '25px', fontSize: '1.2rem', color: '#666' }}>
+                            You successfully completed the path!
+                        </p>
+                        <button
+                            onClick={resetGame}
+                            style={{
+                                backgroundColor: '#28a745',
+                                color: 'white',
+                                border: 'none',
+                                padding: '12px 30px',
+                                fontSize: '1.1rem',
+                                borderRadius: '8px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Play Again
+                        </button>
+                    </div>
+                </div>
+            )}
         </Container>
     );
 }
