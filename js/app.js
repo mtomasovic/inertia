@@ -110,30 +110,48 @@ function App() {
 
     // Generate random path
     const generateRandomPath = React.useCallback(() => {
+        // Ensure we have valid dimensions before generating path
+        if (PLAYABLE_WIDTH <= 0 || PLAYABLE_HEIGHT <= 0) {
+            // Return a simple path as fallback
+            return {
+                points: [{ x: 50, y: 50 }, { x: 100, y: 50 }],
+                width: BALL_SIZE + 20,
+                start: { x: 50, y: 50 },
+                end: { x: 100, y: 50 }
+            };
+        }
+        
         const PATH_WIDTH = BALL_SIZE + 20; // Wider path for easier gameplay
         const MIN_SEGMENT_LENGTH = 100; // Longer minimum segments
         const MAX_SEGMENT_LENGTH = 200; // Much longer maximum segments
-        const BORDER_BUFFER = BALL_SIZE * 3; // Much larger buffer from borders so ball can fall off
+        const BORDER_BUFFER = Math.max(BALL_SIZE * 2, 40); // Ensure minimum buffer but not too large
+        
+        // Ensure buffer doesn't exceed half the available space
+        const maxBuffer = Math.min(BORDER_BUFFER, PLAYABLE_WIDTH / 4, PLAYABLE_HEIGHT / 4);
         
         const path = [];
-        let currentX = BORDER_BUFFER; // Start well away from left edge
+        let currentX = maxBuffer; // Start well away from left edge
         let currentY = PLAYABLE_HEIGHT / 2; // Start from center height
         let isHorizontal = true; // Start with horizontal movement
         
-        // Add starting point
+        // Add starting point - ensure it's within bounds
+        currentX = Math.max(maxBuffer, Math.min(currentX, PLAYABLE_WIDTH - maxBuffer));
+        currentY = Math.max(maxBuffer, Math.min(currentY, PLAYABLE_HEIGHT - maxBuffer));
         path.push({ x: currentX, y: currentY });
         
         // Generate fewer, longer path segments
-        while (currentX < PLAYABLE_WIDTH - BORDER_BUFFER * 1.5) {
+        while (currentX < PLAYABLE_WIDTH - maxBuffer * 1.5) {
             // Create much longer segments
             let segmentLength = MIN_SEGMENT_LENGTH + Math.random() * (MAX_SEGMENT_LENGTH - MIN_SEGMENT_LENGTH);
             
             if (isHorizontal) {
                 // Move horizontally (left to right) - use more space
-                const remainingWidth = PLAYABLE_WIDTH - currentX - BORDER_BUFFER;
+                const remainingWidth = PLAYABLE_WIDTH - currentX - maxBuffer;
                 segmentLength = Math.min(segmentLength, remainingWidth * 0.8); // Use 80% of remaining width
                 
                 currentX += segmentLength;
+                // Ensure we don't exceed bounds
+                currentX = Math.min(currentX, PLAYABLE_WIDTH - maxBuffer);
                 path.push({ x: currentX, y: currentY });
                 
                 // Switch to vertical movement
@@ -144,8 +162,8 @@ function App() {
                 const direction = goUp ? -1 : 1;
                 
                 // Use much more of the vertical space but stay away from borders
-                const minY = BORDER_BUFFER;
-                const maxY = PLAYABLE_HEIGHT - BORDER_BUFFER;
+                const minY = maxBuffer;
+                const maxY = PLAYABLE_HEIGHT - maxBuffer;
                 const availableHeight = maxY - minY;
                 
                 // Make vertical movements span more of the height
@@ -172,6 +190,8 @@ function App() {
                 }
                 
                 currentY = newY;
+                // Ensure Y is within bounds
+                currentY = Math.max(minY, Math.min(currentY, maxY));
                 path.push({ x: currentX, y: currentY });
                 
                 // Switch to horizontal movement
@@ -185,7 +205,7 @@ function App() {
         }
         
         // Final segment to reach the end - use full width but stay away from border
-        const finalX = PLAYABLE_WIDTH - BORDER_BUFFER;
+        const finalX = PLAYABLE_WIDTH - maxBuffer;
         if (!isHorizontal) {
             // If we ended on a vertical segment, add a horizontal one to reach the end
             path.push({ x: finalX, y: currentY });
@@ -204,19 +224,34 @@ function App() {
 
     // Initialize path on component mount and dimension changes
     React.useEffect(() => {
-        const newPath = generateRandomPath();
-        setPathData(newPath);
-        // Reset ball to start of path
-        setBallPosition({
-            x: newPath.start.x - BALL_SIZE / 2,
-            y: newPath.start.y - BALL_SIZE / 2
-        });
-        setVelocity({ x: 0, y: 0 });
-        setGameOver(false);
-        setGameWon(false);
-        setBurnedPath([]); // Reset burned path
-        setFireParticles([]); // Reset fire particles
-    }, [generateRandomPath]);
+        // Add a small delay to ensure dimensions are properly set
+        const initializePath = () => {
+            const newPath = generateRandomPath();
+            setPathData(newPath);
+            
+            // Ensure ball is positioned safely within bounds
+            const safeX = Math.max(0, Math.min(PLAYABLE_WIDTH - BALL_SIZE, newPath.start.x - BALL_SIZE / 2));
+            const safeY = Math.max(0, Math.min(PLAYABLE_HEIGHT - BALL_SIZE, newPath.start.y - BALL_SIZE / 2));
+            
+            // Reset ball to start of path
+            setBallPosition({
+                x: safeX,
+                y: safeY
+            });
+            setVelocity({ x: 0, y: 0 });
+            setGameOver(false);
+            setGameWon(false);
+            setBurnedPath([]); // Reset burned path
+            setFireParticles([]); // Reset fire particles
+        };
+
+        // Small delay for mobile to ensure dimensions are calculated
+        if (window.innerWidth <= 768 || window.innerHeight <= 768) {
+            setTimeout(initializePath, 100);
+        } else {
+            initializePath();
+        }
+    }, [generateRandomPath, PLAYABLE_WIDTH, PLAYABLE_HEIGHT]);
 
     // Check if ball is on path
     const isOnPath = React.useCallback((ballX, ballY) => {
@@ -279,17 +314,46 @@ function App() {
 
     // Reset game
     const resetGame = () => {
-        const newPath = generateRandomPath();
-        setPathData(newPath);
-        setBallPosition({
-            x: newPath.start.x - BALL_SIZE / 2,
-            y: newPath.start.y - BALL_SIZE / 2
-        });
-        setVelocity({ x: 0, y: 0 });
-        setGameOver(false);
-        setGameWon(false);
-        setBurnedPath([]); // Reset burned path
-        setFireParticles([]); // Reset fire particles
+        // Force recalculate dimensions first on mobile to ensure we have current values
+        if (window.innerWidth <= 768 || window.innerHeight <= 768) {
+            // Small delay to ensure dimensions are properly calculated
+            setTimeout(() => {
+                const newPath = generateRandomPath();
+                setPathData(newPath);
+                
+                // Ensure ball is positioned safely within bounds
+                const safeX = Math.max(0, Math.min(PLAYABLE_WIDTH - BALL_SIZE, newPath.start.x - BALL_SIZE / 2));
+                const safeY = Math.max(0, Math.min(PLAYABLE_HEIGHT - BALL_SIZE, newPath.start.y - BALL_SIZE / 2));
+                
+                setBallPosition({
+                    x: safeX,
+                    y: safeY
+                });
+                setVelocity({ x: 0, y: 0 });
+                setGameOver(false);
+                setGameWon(false);
+                setBurnedPath([]); // Reset burned path
+                setFireParticles([]); // Reset fire particles
+            }, 50);
+        } else {
+            // Desktop - immediate reset
+            const newPath = generateRandomPath();
+            setPathData(newPath);
+            
+            // Ensure ball is positioned safely within bounds
+            const safeX = Math.max(0, Math.min(PLAYABLE_WIDTH - BALL_SIZE, newPath.start.x - BALL_SIZE / 2));
+            const safeY = Math.max(0, Math.min(PLAYABLE_HEIGHT - BALL_SIZE, newPath.start.y - BALL_SIZE / 2));
+            
+            setBallPosition({
+                x: safeX,
+                y: safeY
+            });
+            setVelocity({ x: 0, y: 0 });
+            setGameOver(false);
+            setGameWon(false);
+            setBurnedPath([]); // Reset burned path
+            setFireParticles([]); // Reset fire particles
+        }
     };
 
     // Handle swipe gestures for mobile
