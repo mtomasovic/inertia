@@ -49,7 +49,19 @@ function App() {
         
         calculateDimensions();
         window.addEventListener('resize', calculateDimensions);
-        window.addEventListener('orientationchange', calculateDimensions);
+        window.addEventListener('orientationchange', () => {
+            // Re-center ball on orientation change
+            setTimeout(() => {
+                calculateDimensions();
+                // Reset ball position to center after orientation change
+                setBallPosition({
+                    x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
+                    y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
+                });
+                // Also reset velocity to prevent weird movement
+                setVelocity({ x: 0, y: 0 });
+            }, 100); // Small delay to ensure dimensions are updated
+        });
         
         return () => {
             window.removeEventListener('resize', calculateDimensions);
@@ -67,10 +79,265 @@ function App() {
         y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2  // Center vertically
     });
     
+    // Re-center ball when dimensions change
+    React.useEffect(() => {
+        setBallPosition({
+            x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
+            y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
+        });
+    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT]);
+    
     const [velocity, setVelocity] = React.useState({ x: 0, y: 0 });
     const [keysPressed, setKeysPressed] = React.useState(new Set());
     const [tiltSupported, setTiltSupported] = React.useState(false);
     const [tilt, setTilt] = React.useState({ x: 0, y: 0 });
+    const [gameOver, setGameOver] = React.useState(false);
+    const [gameWon, setGameWon] = React.useState(false);
+    const [pathData, setPathData] = React.useState(null);
+    const [burnedPath, setBurnedPath] = React.useState([]);
+    const [fireParticles, setFireParticles] = React.useState([]);
+
+    // Generate random path
+    const generateRandomPath = React.useCallback(() => {
+        const PATH_WIDTH = BALL_SIZE + 20; // Wider path for easier gameplay
+        const MIN_SEGMENT_LENGTH = 100; // Longer minimum segments
+        const MAX_SEGMENT_LENGTH = 200; // Much longer maximum segments
+        const BORDER_BUFFER = BALL_SIZE * 3; // Much larger buffer from borders so ball can fall off
+        
+        const path = [];
+        let currentX = BORDER_BUFFER; // Start well away from left edge
+        let currentY = PLAYABLE_HEIGHT / 2; // Start from center height
+        let isHorizontal = true; // Start with horizontal movement
+        
+        // Add starting point
+        path.push({ x: currentX, y: currentY });
+        
+        // Generate fewer, longer path segments
+        while (currentX < PLAYABLE_WIDTH - BORDER_BUFFER * 1.5) {
+            // Create much longer segments
+            let segmentLength = MIN_SEGMENT_LENGTH + Math.random() * (MAX_SEGMENT_LENGTH - MIN_SEGMENT_LENGTH);
+            
+            if (isHorizontal) {
+                // Move horizontally (left to right) - use more space
+                const remainingWidth = PLAYABLE_WIDTH - currentX - BORDER_BUFFER;
+                segmentLength = Math.min(segmentLength, remainingWidth * 0.8); // Use 80% of remaining width
+                
+                currentX += segmentLength;
+                path.push({ x: currentX, y: currentY });
+                
+                // Switch to vertical movement
+                isHorizontal = false;
+            } else {
+                // Move vertically (up or down) - use full height range
+                const goUp = Math.random() < 0.5;
+                const direction = goUp ? -1 : 1;
+                
+                // Use much more of the vertical space but stay away from borders
+                const minY = BORDER_BUFFER;
+                const maxY = PLAYABLE_HEIGHT - BORDER_BUFFER;
+                const availableHeight = maxY - minY;
+                
+                // Make vertical movements span more of the height
+                let newY = currentY + (direction * segmentLength);
+                
+                // If we hit boundaries, use the full available space
+                if (newY < minY) {
+                    newY = minY;
+                } else if (newY > maxY) {
+                    newY = maxY;
+                }
+                
+                // Ensure we move at least 25% of the available height
+                const minMovement = availableHeight * 0.25;
+                if (Math.abs(newY - currentY) < minMovement) {
+                    const availableUp = currentY - minY;
+                    const availableDown = maxY - currentY;
+                    
+                    if (availableUp > availableDown) {
+                        newY = Math.max(minY, currentY - Math.max(minMovement, availableUp * 0.7));
+                    } else {
+                        newY = Math.min(maxY, currentY + Math.max(minMovement, availableDown * 0.7));
+                    }
+                }
+                
+                currentY = newY;
+                path.push({ x: currentX, y: currentY });
+                
+                // Switch to horizontal movement
+                isHorizontal = true;
+            }
+            
+            // Reduce randomness - make fewer, more deliberate turns
+            if (Math.random() < 0.15) { // Reduced from 0.3 to 0.15
+                segmentLength *= 0.7; // Less dramatic reduction
+            }
+        }
+        
+        // Final segment to reach the end - use full width but stay away from border
+        const finalX = PLAYABLE_WIDTH - BORDER_BUFFER;
+        if (!isHorizontal) {
+            // If we ended on a vertical segment, add a horizontal one to reach the end
+            path.push({ x: finalX, y: currentY });
+        } else {
+            // Extend the current horizontal segment to the end
+            path[path.length - 1] = { x: finalX, y: currentY };
+        }
+        
+        return {
+            points: path,
+            width: PATH_WIDTH,
+            start: path[0],
+            end: path[path.length - 1]
+        };
+    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT, BALL_SIZE]);
+
+    // Initialize path on component mount and dimension changes
+    React.useEffect(() => {
+        const newPath = generateRandomPath();
+        setPathData(newPath);
+        // Reset ball to start of path
+        setBallPosition({
+            x: newPath.start.x - BALL_SIZE / 2,
+            y: newPath.start.y - BALL_SIZE / 2
+        });
+        setVelocity({ x: 0, y: 0 });
+        setGameOver(false);
+        setGameWon(false);
+        setBurnedPath([]); // Reset burned path
+        setFireParticles([]); // Reset fire particles
+    }, [generateRandomPath]);
+
+    // Check if ball is on path
+    const isOnPath = React.useCallback((ballX, ballY) => {
+        if (!pathData) return true;
+        
+        const ballCenterX = ballX + BALL_SIZE / 2;
+        const ballCenterY = ballY + BALL_SIZE / 2;
+        
+        // Check distance from ball center to path
+        for (let i = 0; i < pathData.points.length - 1; i++) {
+            const p1 = pathData.points[i];
+            const p2 = pathData.points[i + 1];
+            
+            // Calculate distance from point to line segment
+            const A = ballCenterX - p1.x;
+            const B = ballCenterY - p1.y;
+            const C = p2.x - p1.x;
+            const D = p2.y - p1.y;
+            
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+            if (lenSq !== 0) param = dot / lenSq;
+            
+            let xx, yy;
+            if (param < 0) {
+                xx = p1.x;
+                yy = p1.y;
+            } else if (param > 1) {
+                xx = p2.x;
+                yy = p2.y;
+            } else {
+                xx = p1.x + param * C;
+                yy = p1.y + param * D;
+            }
+            
+            const dx = ballCenterX - xx;
+            const dy = ballCenterY - yy;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance <= pathData.width / 2) {
+                return true;
+            }
+        }
+        return false;
+    }, [pathData, BALL_SIZE]);
+
+    // Check if ball reached the end
+    const hasReachedEnd = React.useCallback((ballX, ballY) => {
+        if (!pathData) return false;
+        
+        const ballCenterX = ballX + BALL_SIZE / 2;
+        const ballCenterY = ballY + BALL_SIZE / 2;
+        const endX = pathData.end.x;
+        const endY = pathData.end.y;
+        
+        const distance = Math.sqrt((ballCenterX - endX) ** 2 + (ballCenterY - endY) ** 2);
+        return distance <= pathData.width / 2;
+    }, [pathData, BALL_SIZE]);
+
+    // Reset game
+    const resetGame = () => {
+        const newPath = generateRandomPath();
+        setPathData(newPath);
+        setBallPosition({
+            x: newPath.start.x - BALL_SIZE / 2,
+            y: newPath.start.y - BALL_SIZE / 2
+        });
+        setVelocity({ x: 0, y: 0 });
+        setGameOver(false);
+        setGameWon(false);
+        setBurnedPath([]); // Reset burned path
+        setFireParticles([]); // Reset fire particles
+    };
+
+    // Add burned section to path when ball moves
+    const addBurnedSection = React.useCallback((x, y) => {
+        const ballCenterX = x + BALL_SIZE / 2;
+        const ballCenterY = y + BALL_SIZE / 2;
+        
+        setBurnedPath(prevBurned => {
+            // Check if this position is already burned (to avoid duplicates)
+            const isAlreadyBurned = prevBurned.some(point => 
+                Math.abs(point.x - ballCenterX) < 5 && Math.abs(point.y - ballCenterY) < 5
+            );
+            
+            if (isAlreadyBurned) return prevBurned;
+            
+            // Add new burned section
+            return [...prevBurned, { 
+                x: ballCenterX, 
+                y: ballCenterY,
+                burnIntensity: 0.9 + Math.random() * 0.1 // Slight variation in burn intensity
+            }];
+        });
+    }, [BALL_SIZE]);
+
+    // Generate fire particles
+    const generateFireParticles = React.useCallback((x, y) => {
+        const ballCenterX = x + BALL_SIZE / 2;
+        const ballCenterY = y + BALL_SIZE / 2;
+        
+        setFireParticles(prevParticles => {
+            const newParticles = [...prevParticles];
+            
+            // Add new fire particles behind the ball
+            for (let i = 0; i < 3; i++) {
+                newParticles.push({
+                    id: Math.random(),
+                    x: ballCenterX + (Math.random() - 0.5) * 15,
+                    y: ballCenterY + (Math.random() - 0.5) * 15,
+                    size: 3 + Math.random() * 4,
+                    life: 1.0,
+                    velocityX: (Math.random() - 0.5) * 2,
+                    velocityY: (Math.random() - 0.5) * 2,
+                    timestamp: Date.now()
+                });
+            }
+            
+            // Update existing particles and remove dead ones
+            const now = Date.now();
+            return newParticles
+                .map(particle => ({
+                    ...particle,
+                    x: particle.x + particle.velocityX,
+                    y: particle.y + particle.velocityY,
+                    life: Math.max(0, particle.life - 0.02),
+                    size: particle.size * 0.98
+                }))
+                .filter(particle => particle.life > 0 && now - particle.timestamp < 1500);
+        });
+    }, [BALL_SIZE]);
 
     React.useEffect(() => {
         document.title = "Inertia";
@@ -326,6 +593,24 @@ function App() {
                     }
 
                     setBallPosition({ x: newX, y: newY });
+                    
+                    // Add burned section and fire effects when ball moves
+                    if (Math.abs(currentVelocity.x) > 0.1 || Math.abs(currentVelocity.y) > 0.1) {
+                        addBurnedSection(newX, newY);
+                        generateFireParticles(newX, newY);
+                    }
+                    
+                    // Check game conditions
+                    if (!isOnPath(newX, newY) && !gameOver && !gameWon) {
+                        setGameOver(true);
+                        return { x: 0, y: 0 }; // Stop movement
+                    }
+                    
+                    if (hasReachedEnd(newX, newY) && !gameOver && !gameWon) {
+                        setGameWon(true);
+                        return { x: 0, y: 0 }; // Stop movement
+                    }
+                    
                     return { x: updatedVelocityX, y: updatedVelocityY };
                 });
                 
@@ -334,7 +619,26 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed]);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, generateFireParticles]);
+
+    // Animation loop for fire particles
+    React.useEffect(() => {
+        const animationLoop = setInterval(() => {
+            setFireParticles(prevParticles => 
+                prevParticles
+                    .map(particle => ({
+                        ...particle,
+                        x: particle.x + particle.velocityX * 0.5,
+                        y: particle.y + particle.velocityY * 0.5,
+                        life: Math.max(0, particle.life - 0.015),
+                        size: particle.size * 0.99
+                    }))
+                    .filter(particle => particle.life > 0.1)
+            );
+        }, 33); // ~30 FPS for particles
+
+        return () => clearInterval(animationLoop);
+    }, []);
 
     return (
         <Container style={{ 
@@ -361,13 +665,164 @@ function App() {
                 border: '3px solid #333',
                 borderRadius: '10px',
                 position: 'relative',
-                backgroundColor: '#f8f9fa',
-                boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                backgroundColor: '#0a0a0a', // Dark abyss background
+                backgroundImage: `
+                    radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 0.3) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 70%, rgba(75, 0, 130, 0.2) 0%, transparent 40%),
+                    radial-gradient(circle at 40% 80%, rgba(139, 0, 0, 0.2) 0%, transparent 35%),
+                    radial-gradient(circle at 70% 20%, rgba(25, 25, 112, 0.3) 0%, transparent 45%),
+                    linear-gradient(45deg, rgba(0, 0, 0, 0.9) 0%, rgba(25, 25, 25, 0.8) 100%)
+                `,
+                boxShadow: `
+                    0 4px 8px rgba(0,0,0,0.3),
+                    inset 0 0 50px rgba(139, 0, 0, 0.1),
+                    inset 0 0 100px rgba(0, 0, 0, 0.8)
+                `,
                 boxSizing: 'border-box',
                 maxWidth: '95vw', // Ensure it doesn't exceed viewport
-                maxHeight: '70vh'
+                maxHeight: '70vh',
+                overflow: 'hidden'
             }}>
-                {/* Ball */}
+                {/* Abyss animated background effect */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: `
+                        radial-gradient(circle at 30% 40%, rgba(139, 0, 0, 0.15) 0%, transparent 60%),
+                        radial-gradient(circle at 70% 60%, rgba(75, 0, 130, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 50% 20%, rgba(220, 20, 60, 0.08) 0%, transparent 40%)
+                    `,
+                    animation: 'abyssFloat 8s ease-in-out infinite alternate',
+                    zIndex: 1
+                }} />
+                
+                {/* Floating danger particles */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: `
+                        radial-gradient(circle at 15% 25%, rgba(255, 69, 0, 0.1) 1px, transparent 1px),
+                        radial-gradient(circle at 85% 75%, rgba(139, 0, 0, 0.1) 1px, transparent 1px),
+                        radial-gradient(circle at 45% 85%, rgba(255, 20, 147, 0.1) 1px, transparent 1px),
+                        radial-gradient(circle at 75% 15%, rgba(128, 0, 128, 0.1) 1px, transparent 1px)
+                    `,
+                    backgroundSize: '50px 50px, 80px 80px, 60px 60px, 70px 70px',
+                    animation: 'particleFloat 12s linear infinite',
+                    zIndex: 1
+                }} />
+
+                {/* Path */}
+                {pathData && (
+                    <svg
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            pointerEvents: 'none'
+                        }}
+                    >
+                        {/* Original path line with enhanced visibility */}
+                        <path
+                            d={`M ${pathData.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                            stroke="#32CD32"
+                            strokeWidth={pathData.width}
+                            fill="none"
+                            strokeLinecap="round"
+                            strokeLinejoin="miter"
+                            filter="url(#pathGlow)"
+                        />
+                        
+                        {/* Path safety glow */}
+                        <path
+                            d={`M ${pathData.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                            stroke="#90EE90"
+                            strokeWidth={pathData.width + 4}
+                            fill="none"
+                            strokeLinecap="round"
+                            strokeLinejoin="miter"
+                            opacity="0.3"
+                        />
+                        
+                        {/* Burned trail effect */}
+                        {burnedPath.length > 0 && burnedPath.map((burnSpot, index) => (
+                            <circle
+                                key={index}
+                                cx={burnSpot.x}
+                                cy={burnSpot.y}
+                                r={pathData.width / 3}
+                                fill="url(#burnedGrassGradient)"
+                                opacity={burnSpot.burnIntensity}
+                            />
+                        ))}
+                        
+                        {/* Gradient definitions for burned effect */}
+                        <defs>
+                            {/* Path glow filter */}
+                            <filter id="pathGlow" x="-50%" y="-50%" width="200%" height="200%">
+                                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                                <feMerge> 
+                                    <feMergeNode in="coloredBlur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                            
+                            <radialGradient id="burnedGrassGradient" cx="50%" cy="50%" r="60%">
+                                <stop offset="0%" stopColor="#2F1B14" stopOpacity="0.9" />
+                                <stop offset="30%" stopColor="#654321" stopOpacity="0.8" />
+                                <stop offset="60%" stopColor="#8B4513" stopOpacity="0.6" />
+                                <stop offset="80%" stopColor="#A0522D" stopOpacity="0.4" />
+                                <stop offset="100%" stopColor="#D2B48C" stopOpacity="0.2" />
+                            </radialGradient>
+                            <radialGradient id="fireGradient" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stopColor="#FFD700" stopOpacity="0.9" />
+                                <stop offset="40%" stopColor="#FF4500" stopOpacity="0.7" />
+                                <stop offset="70%" stopColor="#DC143C" stopOpacity="0.5" />
+                                <stop offset="100%" stopColor="#8B0000" stopOpacity="0.2" />
+                            </radialGradient>
+                        </defs>
+                        
+                        {/* Fire particles */}
+                        {fireParticles.map(particle => (
+                            <circle
+                                key={particle.id}
+                                cx={particle.x}
+                                cy={particle.y}
+                                r={particle.size}
+                                fill="url(#fireGradient)"
+                                opacity={particle.life}
+                            />
+                        ))}
+                        
+                        {/* Start marker */}
+                        <circle
+                            cx={pathData.start.x}
+                            cy={pathData.start.y}
+                            r={pathData.width / 2 + 2}
+                            fill="none"
+                            stroke="#007bff"
+                            strokeWidth="3"
+                        />
+                        {/* End marker */}
+                        <circle
+                            cx={pathData.end.x}
+                            cy={pathData.end.y}
+                            r={pathData.width / 2 + 2}
+                            fill="none"
+                            stroke="#dc3545"
+                            strokeWidth="3"
+                        />
+                    </svg>
+                )}
+                
+                {/* Ball with fire glow effect */}
                 <div style={{
                     width: BALL_SIZE,
                     height: BALL_SIZE,
@@ -376,10 +831,39 @@ function App() {
                     position: 'absolute',
                     left: ballPosition.x,
                     top: ballPosition.y,
-                    transition: 'all 0.1s ease',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                    transition: gameOver || gameWon ? 'none' : 'all 0.1s ease',
+                    boxShadow: `
+                        0 2px 4px rgba(0,0,0,0.2),
+                        0 0 20px rgba(255, 69, 0, 0.6),
+                        0 0 40px rgba(255, 140, 0, 0.4),
+                        inset 0 0 10px rgba(255, 215, 0, 0.3)
+                    `,
+                    zIndex: 10,
+                    background: `radial-gradient(circle at 30% 30%, #87CEEB, #007bff, #000080)`
                 }} />
             </div>
+            
+            {/* CSS animations for abyss effects */}
+            <style>{`
+                @keyframes abyssFloat {
+                    0% { transform: translateY(0px) scale(1); opacity: 0.6; }
+                    50% { transform: translateY(-10px) scale(1.05); opacity: 0.8; }
+                    100% { transform: translateY(0px) scale(1); opacity: 0.6; }
+                }
+                
+                @keyframes particleFloat {
+                    0% { transform: translateX(0px) translateY(0px); }
+                    25% { transform: translateX(5px) translateY(-3px); }
+                    50% { transform: translateX(-3px) translateY(5px); }
+                    75% { transform: translateX(-5px) translateY(-2px); }
+                    100% { transform: translateX(0px) translateY(0px); }
+                }
+                
+                @keyframes abyssPulse {
+                    0%, 100% { box-shadow: inset 0 0 50px rgba(139, 0, 0, 0.1), inset 0 0 100px rgba(0, 0, 0, 0.8); }
+                    50% { box-shadow: inset 0 0 70px rgba(139, 0, 0, 0.2), inset 0 0 120px rgba(0, 0, 0, 0.9); }
+                }
+            `}</style>
             
             {/* Instructions */}
             <div style={{ 
@@ -388,7 +872,8 @@ function App() {
                 fontSize: '1.1rem',
                 textAlign: 'center'
             }}>
-                <p style={{ margin: '5px 0' }}>Use WASD keys to move the ball</p>
+                <p style={{ margin: '5px 0' }}>Guide the ball along the green path from start (blue) to finish (red)</p>
+                <p style={{ margin: '5px 0', fontSize: '0.9rem' }}>Use WASD keys to move the ball</p>
                 {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
                     <button 
                         onClick={requestTiltPermission}
@@ -412,6 +897,94 @@ function App() {
                     </p>
                 )}
             </div>
+            
+            {/* Game Over Modal */}
+            {gameOver && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100vw',
+                    height: '100vh',
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: 'white',
+                        padding: '30px',
+                        borderRadius: '15px',
+                        textAlign: 'center',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                        maxWidth: '90vw'
+                    }}>
+                        <h2 style={{ color: '#dc3545', marginBottom: '20px', fontSize: '2rem' }}>Game Over!</h2>
+                        <p style={{ marginBottom: '25px', fontSize: '1.2rem', color: '#666' }}>
+                            You fell off the path. Try again!
+                        </p>
+                        <button
+                            onClick={resetGame}
+                            style={{
+                                backgroundColor: '#007bff',
+                                color: 'white',
+                                border: 'none',
+                                padding: '12px 30px',
+                                fontSize: '1.1rem',
+                                borderRadius: '8px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                </div>
+            )}
+            
+            {/* Game Won Modal */}
+            {gameWon && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    width: '100vw',
+                    height: '100vh',
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: 'white',
+                        padding: '30px',
+                        borderRadius: '15px',
+                        textAlign: 'center',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                        maxWidth: '90vw'
+                    }}>
+                        <h2 style={{ color: '#28a745', marginBottom: '20px', fontSize: '2rem' }}>Congratulations! 🎉</h2>
+                        <p style={{ marginBottom: '25px', fontSize: '1.2rem', color: '#666' }}>
+                            You successfully completed the path!
+                        </p>
+                        <button
+                            onClick={resetGame}
+                            style={{
+                                backgroundColor: '#28a745',
+                                color: 'white',
+                                border: 'none',
+                                padding: '12px 30px',
+                                fontSize: '1.1rem',
+                                borderRadius: '8px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            Play Again
+                        </button>
+                    </div>
+                </div>
+            )}
         </Container>
     );
 }
