@@ -665,12 +665,58 @@ function App() {
                 border: '3px solid #333',
                 borderRadius: '10px',
                 position: 'relative',
-                backgroundColor: '#f8f9fa',
-                boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                backgroundColor: '#0a0a0a', // Dark abyss background
+                backgroundImage: `
+                    radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 0.3) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 70%, rgba(75, 0, 130, 0.2) 0%, transparent 40%),
+                    radial-gradient(circle at 40% 80%, rgba(139, 0, 0, 0.2) 0%, transparent 35%),
+                    radial-gradient(circle at 70% 20%, rgba(25, 25, 112, 0.3) 0%, transparent 45%),
+                    linear-gradient(45deg, rgba(0, 0, 0, 0.9) 0%, rgba(25, 25, 25, 0.8) 100%)
+                `,
+                boxShadow: `
+                    0 4px 8px rgba(0,0,0,0.3),
+                    inset 0 0 50px rgba(139, 0, 0, 0.1),
+                    inset 0 0 100px rgba(0, 0, 0, 0.8)
+                `,
                 boxSizing: 'border-box',
                 maxWidth: '95vw', // Ensure it doesn't exceed viewport
-                maxHeight: '70vh'
+                maxHeight: '70vh',
+                overflow: 'hidden'
             }}>
+                {/* Abyss animated background effect */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: `
+                        radial-gradient(circle at 30% 40%, rgba(139, 0, 0, 0.15) 0%, transparent 60%),
+                        radial-gradient(circle at 70% 60%, rgba(75, 0, 130, 0.1) 0%, transparent 50%),
+                        radial-gradient(circle at 50% 20%, rgba(220, 20, 60, 0.08) 0%, transparent 40%)
+                    `,
+                    animation: 'abyssFloat 8s ease-in-out infinite alternate',
+                    zIndex: 1
+                }} />
+                
+                {/* Floating danger particles */}
+                <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: `
+                        radial-gradient(circle at 15% 25%, rgba(255, 69, 0, 0.1) 1px, transparent 1px),
+                        radial-gradient(circle at 85% 75%, rgba(139, 0, 0, 0.1) 1px, transparent 1px),
+                        radial-gradient(circle at 45% 85%, rgba(255, 20, 147, 0.1) 1px, transparent 1px),
+                        radial-gradient(circle at 75% 15%, rgba(128, 0, 128, 0.1) 1px, transparent 1px)
+                    `,
+                    backgroundSize: '50px 50px, 80px 80px, 60px 60px, 70px 70px',
+                    animation: 'particleFloat 12s linear infinite',
+                    zIndex: 1
+                }} />
+
                 {/* Path */}
                 {pathData && (
                     <svg
@@ -683,14 +729,26 @@ function App() {
                             pointerEvents: 'none'
                         }}
                     >
-                        {/* Original path line */}
+                        {/* Original path line with enhanced visibility */}
                         <path
                             d={`M ${pathData.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
-                            stroke="#28a745"
+                            stroke="#32CD32"
                             strokeWidth={pathData.width}
                             fill="none"
                             strokeLinecap="round"
                             strokeLinejoin="miter"
+                            filter="url(#pathGlow)"
+                        />
+                        
+                        {/* Path safety glow */}
+                        <path
+                            d={`M ${pathData.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                            stroke="#90EE90"
+                            strokeWidth={pathData.width + 4}
+                            fill="none"
+                            strokeLinecap="round"
+                            strokeLinejoin="miter"
+                            opacity="0.3"
                         />
                         
                         {/* Burned trail effect */}
@@ -707,6 +765,15 @@ function App() {
                         
                         {/* Gradient definitions for burned effect */}
                         <defs>
+                            {/* Path glow filter */}
+                            <filter id="pathGlow" x="-50%" y="-50%" width="200%" height="200%">
+                                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                                <feMerge> 
+                                    <feMergeNode in="coloredBlur"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                            
                             <radialGradient id="burnedGrassGradient" cx="50%" cy="50%" r="60%">
                                 <stop offset="0%" stopColor="#2F1B14" stopOpacity="0.9" />
                                 <stop offset="30%" stopColor="#654321" stopOpacity="0.8" />
@@ -775,6 +842,28 @@ function App() {
                     background: `radial-gradient(circle at 30% 30%, #87CEEB, #007bff, #000080)`
                 }} />
             </div>
+            
+            {/* CSS animations for abyss effects */}
+            <style>{`
+                @keyframes abyssFloat {
+                    0% { transform: translateY(0px) scale(1); opacity: 0.6; }
+                    50% { transform: translateY(-10px) scale(1.05); opacity: 0.8; }
+                    100% { transform: translateY(0px) scale(1); opacity: 0.6; }
+                }
+                
+                @keyframes particleFloat {
+                    0% { transform: translateX(0px) translateY(0px); }
+                    25% { transform: translateX(5px) translateY(-3px); }
+                    50% { transform: translateX(-3px) translateY(5px); }
+                    75% { transform: translateX(-5px) translateY(-2px); }
+                    100% { transform: translateX(0px) translateY(0px); }
+                }
+                
+                @keyframes abyssPulse {
+                    0%, 100% { box-shadow: inset 0 0 50px rgba(139, 0, 0, 0.1), inset 0 0 100px rgba(0, 0, 0, 0.8); }
+                    50% { box-shadow: inset 0 0 70px rgba(139, 0, 0, 0.2), inset 0 0 120px rgba(0, 0, 0, 0.9); }
+                }
+            `}</style>
             
             {/* Instructions */}
             <div style={{ 
