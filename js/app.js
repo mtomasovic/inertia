@@ -49,7 +49,19 @@ function App() {
         
         calculateDimensions();
         window.addEventListener('resize', calculateDimensions);
-        window.addEventListener('orientationchange', calculateDimensions);
+        window.addEventListener('orientationchange', () => {
+            // Re-center ball on orientation change
+            setTimeout(() => {
+                calculateDimensions();
+                // Reset ball position to center after orientation change
+                setBallPosition({
+                    x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
+                    y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
+                });
+                // Also reset velocity to prevent weird movement
+                setVelocity({ x: 0, y: 0 });
+            }, 100); // Small delay to ensure dimensions are updated
+        });
         
         return () => {
             window.removeEventListener('resize', calculateDimensions);
@@ -66,6 +78,14 @@ function App() {
         x: (PLAYABLE_WIDTH - BALL_SIZE) / 2, // Center horizontally
         y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2  // Center vertically
     });
+    
+    // Re-center ball when dimensions change
+    React.useEffect(() => {
+        setBallPosition({
+            x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
+            y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
+        });
+    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT]);
     
     const [velocity, setVelocity] = React.useState({ x: 0, y: 0 });
     const [keysPressed, setKeysPressed] = React.useState(new Set());
