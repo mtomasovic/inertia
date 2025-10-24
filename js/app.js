@@ -1,18 +1,65 @@
 function App() {
     const { Container } = ReactBootstrap;
     
-    // Game box dimensions
-    const GAME_BOX_WIDTH = 600;
-    const GAME_BOX_HEIGHT = 400;
+    // Base game box dimensions and aspect ratio
+    const BASE_WIDTH = 600;
+    const BASE_HEIGHT = 400;
+    const ASPECT_RATIO = BASE_WIDTH / BASE_HEIGHT; // 1.5:1 ratio
     const BALL_SIZE = 20;
     const BORDER_WIDTH = 3;
     const ACCELERATION = 0.5; // How fast velocity increases when key is held
     const FRICTION = 0.95; // Friction coefficient (0.95 = 5% speed reduction per frame)
     const MIN_VELOCITY = 0.1; // Minimum velocity before stopping completely
     
+    // State for responsive dimensions
+    const [dimensions, setDimensions] = React.useState({
+        width: BASE_WIDTH,
+        height: BASE_HEIGHT
+    });
+    
+    // Calculate responsive dimensions
+    React.useEffect(() => {
+        const calculateDimensions = () => {
+            const padding = 40; // Padding around the game box
+            const maxViewportWidth = window.innerWidth - padding;
+            const maxViewportHeight = window.innerHeight - padding - 200; // Extra space for title and instructions
+            
+            // Calculate maximum possible dimensions while maintaining aspect ratio
+            let newWidth = maxViewportWidth;
+            let newHeight = newWidth / ASPECT_RATIO;
+            
+            // If height exceeds viewport, constrain by height instead
+            if (newHeight > maxViewportHeight) {
+                newHeight = maxViewportHeight;
+                newWidth = newHeight * ASPECT_RATIO;
+            }
+            
+            // Ensure minimum size for playability
+            const minWidth = 300;
+            const minHeight = minWidth / ASPECT_RATIO;
+            
+            newWidth = Math.max(minWidth, Math.min(newWidth, BASE_WIDTH * 1.5)); // Max 1.5x the base size
+            newHeight = Math.max(minHeight, Math.min(newHeight, BASE_HEIGHT * 1.5));
+            
+            setDimensions({
+                width: Math.round(newWidth),
+                height: Math.round(newHeight)
+            });
+        };
+        
+        calculateDimensions();
+        window.addEventListener('resize', calculateDimensions);
+        window.addEventListener('orientationchange', calculateDimensions);
+        
+        return () => {
+            window.removeEventListener('resize', calculateDimensions);
+            window.removeEventListener('orientationchange', calculateDimensions);
+        };
+    }, []);
+    
     // Effective playable area (accounting for borders)
-    const PLAYABLE_WIDTH = GAME_BOX_WIDTH - (BORDER_WIDTH * 2);
-    const PLAYABLE_HEIGHT = GAME_BOX_HEIGHT - (BORDER_WIDTH * 2);
+    const PLAYABLE_WIDTH = dimensions.width - (BORDER_WIDTH * 2);
+    const PLAYABLE_HEIGHT = dimensions.height - (BORDER_WIDTH * 2);
     
     // Ball position and velocity state
     const [ballPosition, setBallPosition] = React.useState({
@@ -128,14 +175,16 @@ function App() {
             
             {/* Game Screen Box */}
             <div style={{
-                width: GAME_BOX_WIDTH,
-                height: GAME_BOX_HEIGHT,
+                width: dimensions.width,
+                height: dimensions.height,
                 border: '3px solid #333',
                 borderRadius: '10px',
                 position: 'relative',
                 backgroundColor: '#f8f9fa',
                 boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                maxWidth: '95vw', // Ensure it doesn't exceed viewport
+                maxHeight: '70vh'
             }}>
                 {/* Ball */}
                 <div style={{
