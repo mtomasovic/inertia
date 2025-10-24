@@ -85,67 +85,167 @@ function App() {
             
             if (event.beta !== null && event.gamma !== null) {
                 const maxTilt = 30; // Maximum tilt angle to consider
-                const sensitivity = 0.8; // Sensitivity multiplier
+                const sensitivity = 1.2; // Increased sensitivity
                 
                 // Convert tilt to acceleration values
                 // gamma: negative = tilt left, positive = tilt right
                 // beta: negative = tilt away, positive = tilt toward
-                const tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
-                const tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
+                let tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
+                let tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
+                
+                // Adjust for device orientation (landscape vs portrait)
+                if (window.orientation === 90 || window.orientation === -90) {
+                    // Landscape mode - swap and adjust axes
+                    const temp = tiltX;
+                    tiltX = window.orientation === 90 ? tiltY : -tiltY;
+                    tiltY = window.orientation === 90 ? -temp : temp;
+                }
                 
                 setTilt({ x: tiltX, y: tiltY });
+                
+                // Set tilt supported if we're getting valid data
+                if (!tiltSupported) {
+                    setTiltSupported(true);
+                }
+            }
+        };
+
+        const handleDeviceMotion = (event) => {
+            // Fallback to DeviceMotionEvent if orientation doesn't work
+            if (event.accelerationIncludingGravity) {
+                const { x, y } = event.accelerationIncludingGravity;
+                if (x !== null && y !== null) {
+                    const maxAccel = 5; // Maximum acceleration to consider
+                    const sensitivity = 0.3;
+                    
+                    let tiltX = Math.max(-1, Math.min(1, x / maxAccel)) * sensitivity;
+                    let tiltY = Math.max(-1, Math.min(1, -y / maxAccel)) * sensitivity; // Invert Y
+                    
+                    // Adjust for device orientation
+                    if (window.orientation === 90 || window.orientation === -90) {
+                        const temp = tiltX;
+                        tiltX = window.orientation === 90 ? -tiltY : tiltY;
+                        tiltY = window.orientation === 90 ? temp : -temp;
+                    }
+                    
+                    setTilt({ x: tiltX, y: tiltY });
+                    
+                    if (!tiltSupported) {
+                        setTiltSupported(true);
+                    }
+                }
             }
         };
 
         const requestPermission = async () => {
+            let permissionGranted = false;
+            
             // Check if DeviceOrientationEvent is supported
             if (typeof DeviceOrientationEvent !== 'undefined') {
                 // For iOS 13+ devices, need to request permission
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    try {
-                        const response = await DeviceOrientationEvent.requestPermission();
-                        if (response === 'granted') {
-                            setTiltSupported(true);
-                            window.addEventListener('deviceorientation', handleDeviceOrientation);
-                        }
-                    } catch (error) {
-                        console.log('Device orientation not supported or permission denied');
-                    }
+                    // Don't auto-request permission, wait for user interaction
+                    return;
                 } else {
                     // For other devices, just add the event listener
-                    setTiltSupported(true);
-                    window.addEventListener('deviceorientation', handleDeviceOrientation);
+                    window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+                    permissionGranted = true;
                 }
+            }
+            
+            // Also try DeviceMotionEvent as fallback
+            if (typeof DeviceMotionEvent !== 'undefined') {
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    // Don't auto-request permission for motion either
+                } else {
+                    window.addEventListener('devicemotion', handleDeviceMotion, true);
+                    permissionGranted = true;
+                }
+            }
+            
+            // Set a timeout to check if we got any motion data
+            if (permissionGranted) {
+                setTimeout(() => {
+                    // This will be set by the event handlers if they receive data
+                }, 2000);
             }
         };
 
         requestPermission();
 
         return () => {
-            window.removeEventListener('deviceorientation', handleDeviceOrientation);
+            window.removeEventListener('deviceorientation', handleDeviceOrientation, true);
+            window.removeEventListener('devicemotion', handleDeviceMotion, true);
         };
-    }, []);
+    }, [tiltSupported]);
 
     // Add click handler for iOS permission request
     const requestTiltPermission = async () => {
+        let hasPermission = false;
+        
+        // Try DeviceOrientationEvent first
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
             try {
                 const response = await DeviceOrientationEvent.requestPermission();
                 if (response === 'granted') {
-                    setTiltSupported(true);
                     window.addEventListener('deviceorientation', (event) => {
                         if (event.beta !== null && event.gamma !== null) {
                             const maxTilt = 30;
-                            const sensitivity = 0.8;
-                            const tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
-                            const tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
+                            const sensitivity = 1.2;
+                            let tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
+                            let tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
+                            
+                            if (window.orientation === 90 || window.orientation === -90) {
+                                const temp = tiltX;
+                                tiltX = window.orientation === 90 ? tiltY : -tiltY;
+                                tiltY = window.orientation === 90 ? -temp : temp;
+                            }
+                            
                             setTilt({ x: tiltX, y: tiltY });
+                            setTiltSupported(true);
                         }
-                    });
+                    }, true);
+                    hasPermission = true;
                 }
             } catch (error) {
-                console.log('Permission denied');
+                console.log('DeviceOrientation permission denied:', error);
             }
+        }
+        
+        // Try DeviceMotionEvent as fallback
+        if (!hasPermission && typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const response = await DeviceMotionEvent.requestPermission();
+                if (response === 'granted') {
+                    window.addEventListener('devicemotion', (event) => {
+                        if (event.accelerationIncludingGravity) {
+                            const { x, y } = event.accelerationIncludingGravity;
+                            if (x !== null && y !== null) {
+                                const maxAccel = 5;
+                                const sensitivity = 0.3;
+                                let tiltX = Math.max(-1, Math.min(1, x / maxAccel)) * sensitivity;
+                                let tiltY = Math.max(-1, Math.min(1, -y / maxAccel)) * sensitivity;
+                                
+                                if (window.orientation === 90 || window.orientation === -90) {
+                                    const temp = tiltX;
+                                    tiltX = window.orientation === 90 ? -tiltY : tiltY;
+                                    tiltY = window.orientation === 90 ? temp : -temp;
+                                }
+                                
+                                setTilt({ x: tiltX, y: tiltY });
+                                setTiltSupported(true);
+                            }
+                        }
+                    }, true);
+                    hasPermission = true;
+                }
+            } catch (error) {
+                console.log('DeviceMotion permission denied:', error);
+            }
+        }
+        
+        if (!hasPermission) {
+            alert('Tilt controls require device orientation/motion permissions. Please check your browser settings.');
         }
     };
 
@@ -289,7 +389,7 @@ function App() {
                 textAlign: 'center'
             }}>
                 <p style={{ margin: '5px 0' }}>Use WASD keys to move the ball</p>
-                {!tiltSupported && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' && (
+                {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
                     <button 
                         onClick={requestTiltPermission}
                         style={{
