@@ -69,10 +69,85 @@ function App() {
     
     const [velocity, setVelocity] = React.useState({ x: 0, y: 0 });
     const [keysPressed, setKeysPressed] = React.useState(new Set());
+    const [tiltSupported, setTiltSupported] = React.useState(false);
+    const [tilt, setTilt] = React.useState({ x: 0, y: 0 });
 
     React.useEffect(() => {
         document.title = "Inertia";
     }, []);
+
+    // Handle device orientation for mobile tilt controls
+    React.useEffect(() => {
+        const handleDeviceOrientation = (event) => {
+            // DeviceOrientationEvent provides:
+            // beta: front-back tilt in degrees (-180 to 180)
+            // gamma: left-right tilt in degrees (-90 to 90)
+            
+            if (event.beta !== null && event.gamma !== null) {
+                const maxTilt = 30; // Maximum tilt angle to consider
+                const sensitivity = 0.8; // Sensitivity multiplier
+                
+                // Convert tilt to acceleration values
+                // gamma: negative = tilt left, positive = tilt right
+                // beta: negative = tilt away, positive = tilt toward
+                const tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
+                const tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
+                
+                setTilt({ x: tiltX, y: tiltY });
+            }
+        };
+
+        const requestPermission = async () => {
+            // Check if DeviceOrientationEvent is supported
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                // For iOS 13+ devices, need to request permission
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    try {
+                        const response = await DeviceOrientationEvent.requestPermission();
+                        if (response === 'granted') {
+                            setTiltSupported(true);
+                            window.addEventListener('deviceorientation', handleDeviceOrientation);
+                        }
+                    } catch (error) {
+                        console.log('Device orientation not supported or permission denied');
+                    }
+                } else {
+                    // For other devices, just add the event listener
+                    setTiltSupported(true);
+                    window.addEventListener('deviceorientation', handleDeviceOrientation);
+                }
+            }
+        };
+
+        requestPermission();
+
+        return () => {
+            window.removeEventListener('deviceorientation', handleDeviceOrientation);
+        };
+    }, []);
+
+    // Add click handler for iOS permission request
+    const requestTiltPermission = async () => {
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                const response = await DeviceOrientationEvent.requestPermission();
+                if (response === 'granted') {
+                    setTiltSupported(true);
+                    window.addEventListener('deviceorientation', (event) => {
+                        if (event.beta !== null && event.gamma !== null) {
+                            const maxTilt = 30;
+                            const sensitivity = 0.8;
+                            const tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
+                            const tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
+                            setTilt({ x: tiltX, y: tiltY });
+                        }
+                    });
+                }
+            } catch (error) {
+                console.log('Permission denied');
+            }
+        }
+    };
 
     // Handle key press and release
     React.useEffect(() => {
@@ -115,6 +190,12 @@ function App() {
                 if (keysPressed.has('s')) newVelocityY += ACCELERATION;
                 if (keysPressed.has('a')) newVelocityX -= ACCELERATION;
                 if (keysPressed.has('d')) newVelocityX += ACCELERATION;
+
+                // Apply acceleration based on device tilt (mobile)
+                if (tiltSupported) {
+                    newVelocityX += tilt.x * ACCELERATION;
+                    newVelocityY += tilt.y * ACCELERATION;
+                }
 
                 // Apply friction to gradually slow down
                 newVelocityX *= FRICTION;
@@ -201,13 +282,36 @@ function App() {
             </div>
             
             {/* Instructions */}
-            <p style={{ 
+            <div style={{ 
                 marginTop: '20px', 
                 color: '#666',
-                fontSize: '1.1rem'
+                fontSize: '1.1rem',
+                textAlign: 'center'
             }}>
-                Use WASD keys to move the ball
-            </p>
+                <p style={{ margin: '5px 0' }}>Use WASD keys to move the ball</p>
+                {!tiltSupported && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' && (
+                    <button 
+                        onClick={requestTiltPermission}
+                        style={{
+                            marginTop: '10px',
+                            padding: '10px 20px',
+                            backgroundColor: '#007bff',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                            fontSize: '1rem'
+                        }}
+                    >
+                        Enable Tilt Controls
+                    </button>
+                )}
+                {tiltSupported && (
+                    <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                        Tilt controls enabled - tilt your device to move
+                    </p>
+                )}
+            </div>
         </Container>
     );
 }
