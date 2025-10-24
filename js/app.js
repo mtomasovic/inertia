@@ -20,9 +20,16 @@ function App() {
     // Calculate responsive dimensions
     React.useEffect(() => {
         const calculateDimensions = () => {
-            const padding = 40; // Padding around the game box
+            // Detect if we're on a mobile device
+            const isMobile = window.innerWidth <= 768 || window.innerHeight <= 768;
+            
+            // Use minimal padding on mobile to maximize playable area
+            const padding = isMobile ? 10 : 40; // Minimal padding on mobile
+            // Reduce space reserved for title and instructions on mobile
+            const uiSpace = isMobile ? 100 : 200; // Even less UI space on mobile
+            
             const maxViewportWidth = window.innerWidth - padding;
-            const maxViewportHeight = window.innerHeight - padding - 200; // Extra space for title and instructions
+            const maxViewportHeight = window.innerHeight - padding - uiSpace;
             
             // Calculate maximum possible dimensions while maintaining aspect ratio
             let newWidth = maxViewportWidth;
@@ -35,11 +42,13 @@ function App() {
             }
             
             // Ensure minimum size for playability
-            const minWidth = 300;
+            const minWidth = isMobile ? 280 : 300;
             const minHeight = minWidth / ASPECT_RATIO;
             
-            newWidth = Math.max(minWidth, Math.min(newWidth, BASE_WIDTH * 1.5)); // Max 1.5x the base size
-            newHeight = Math.max(minHeight, Math.min(newHeight, BASE_HEIGHT * 1.5));
+            // Allow much larger multipliers on mobile for maximum screen usage
+            const maxMultiplier = isMobile ? 3.5 : 1.5; // Much larger on mobile (up to 3.5x)
+            newWidth = Math.max(minWidth, Math.min(newWidth, BASE_WIDTH * maxMultiplier));
+            newHeight = Math.max(minHeight, Math.min(newHeight, BASE_HEIGHT * maxMultiplier));
             
             setDimensions({
                 width: Math.round(newWidth),
@@ -716,10 +725,10 @@ function App() {
             textAlign: 'center'
         }}>
             <h1 style={{ 
-                fontSize: '3rem', 
+                fontSize: window.innerWidth <= 768 ? '2rem' : '3rem', 
                 fontWeight: 'bold', 
                 color: '#333',
-                marginBottom: '30px'
+                marginBottom: window.innerWidth <= 768 ? '15px' : '30px'
             }}>
                 Inertia
             </h1>
@@ -936,14 +945,18 @@ function App() {
             
             {/* Instructions */}
             <div style={{ 
-                marginTop: '20px', 
+                marginTop: window.innerWidth <= 768 ? '10px' : '20px', 
                 color: '#666',
-                fontSize: '1.1rem',
+                fontSize: window.innerWidth <= 768 ? '0.9rem' : '1.1rem',
                 textAlign: 'center'
             }}>
-                <p style={{ margin: '5px 0' }}>Guide the ball along the green path from start (blue) to finish (red)</p>
-                <p style={{ margin: '5px 0', fontSize: '0.9rem' }}>Use WASD keys to move the ball</p>
-                {isSwipeSupported && (
+                <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0' }}>
+                    Guide the ball along the green path from start (blue) to finish (red)
+                </p>
+                <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0', fontSize: '0.85rem' }}>
+                    {window.innerWidth <= 768 ? 'WASD keys or swipe to move' : 'Use WASD keys to move the ball'}
+                </p>
+                {isSwipeSupported && window.innerWidth > 768 && (
                     <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic', color: '#28a745' }}>
                         Swipe to launch the ball in any direction!
                     </p>
@@ -952,20 +965,20 @@ function App() {
                     <button 
                         onClick={requestTiltPermission}
                         style={{
-                            marginTop: '10px',
-                            padding: '10px 20px',
+                            marginTop: window.innerWidth <= 768 ? '5px' : '10px',
+                            padding: window.innerWidth <= 768 ? '8px 16px' : '10px 20px',
                             backgroundColor: '#007bff',
                             color: 'white',
                             border: 'none',
                             borderRadius: '5px',
                             cursor: 'pointer',
-                            fontSize: '1rem'
+                            fontSize: window.innerWidth <= 768 ? '0.85rem' : '1rem'
                         }}
                     >
                         Enable Tilt Controls
                     </button>
                 )}
-                {tiltSupported && (
+                {tiltSupported && window.innerWidth > 768 && (
                     <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic' }}>
                         Tilt controls enabled - tilt your device to move
                     </p>
