@@ -104,8 +104,6 @@ function App() {
     const [gameWon, setGameWon] = React.useState(false);
     const [pathData, setPathData] = React.useState(null);
     const [burnedPath, setBurnedPath] = React.useState([]);
-    const [touchStart, setTouchStart] = React.useState(null);
-    const [isSwipeSupported, setIsSwipeSupported] = React.useState(false);
     const [hasUserMoved, setHasUserMoved] = React.useState(false); // Track if user has initiated movement
 
     // Generate random path
@@ -355,75 +353,6 @@ function App() {
             setHasUserMoved(false); // Reset movement flag
         }
     };
-
-    // Handle swipe gestures for mobile
-    const handleTouchStart = React.useCallback((e) => {
-        if (!e.touches || e.touches.length === 0) return;
-        
-        const touch = e.touches[0];
-        setTouchStart({
-            x: touch.clientX,
-            y: touch.clientY,
-            timestamp: Date.now()
-        });
-        setIsSwipeSupported(true);
-    }, []);
-
-    const handleTouchEnd = React.useCallback((e) => {
-        if (!touchStart || !e.changedTouches || e.changedTouches.length === 0) return;
-
-        const touch = e.changedTouches[0];
-        const touchEnd = {
-            x: touch.clientX,
-            y: touch.clientY,
-            timestamp: Date.now()
-        };
-
-        const deltaX = touchEnd.x - touchStart.x;
-        const deltaY = touchEnd.y - touchStart.y;
-        const deltaTime = touchEnd.timestamp - touchStart.timestamp;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-        // Only register as swipe if:
-        // - Distance is significant (minimum 30px)
-        // - Time is reasonable (not too slow, not too fast)
-        // - Not currently in game over/won state
-        if (distance > 30 && deltaTime > 50 && deltaTime < 800 && !gameOver && !gameWon) {
-            // Calculate swipe velocity based on distance and time
-            const baseVelocity = Math.min(distance / deltaTime * 15, 8); // Cap max velocity
-            
-            // Normalize direction
-            const directionX = deltaX / distance;
-            const directionY = deltaY / distance;
-            
-            // Apply velocity boost to current velocity
-            setVelocity(prevVelocity => ({
-                x: prevVelocity.x + (directionX * baseVelocity),
-                y: prevVelocity.y + (directionY * baseVelocity)
-            }));
-            
-            // Set movement flag for swipe input
-            if (!hasUserMoved) {
-                setHasUserMoved(true);
-            }
-        }
-
-        setTouchStart(null);
-    }, [touchStart, gameOver, gameWon, hasUserMoved]);
-
-    // Add touch event listeners
-    React.useEffect(() => {
-        const gameElement = document.getElementById('game-container');
-        if (gameElement) {
-            gameElement.addEventListener('touchstart', handleTouchStart, { passive: false });
-            gameElement.addEventListener('touchend', handleTouchEnd, { passive: false });
-            
-            return () => {
-                gameElement.removeEventListener('touchstart', handleTouchStart);
-                gameElement.removeEventListener('touchend', handleTouchEnd);
-            };
-        }
-    }, [handleTouchStart, handleTouchEnd]);
 
     // Add burned section to path when ball moves
     const addBurnedSection = React.useCallback((x, y) => {
@@ -963,13 +892,8 @@ function App() {
                     Guide the ball along the green path from start (blue) to finish (red)
                 </p>
                 <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0', fontSize: '0.85rem' }}>
-                    {window.innerWidth <= 768 ? 'WASD keys or swipe to move' : 'Use WASD keys to move the ball'}
+                    Use WASD keys to move the ball
                 </p>
-                {isSwipeSupported && window.innerWidth > 768 && (
-                    <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic', color: '#28a745' }}>
-                        Swipe to launch the ball in any direction!
-                    </p>
-                )}
                 {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
                     <button 
                         onClick={requestTiltPermission}
