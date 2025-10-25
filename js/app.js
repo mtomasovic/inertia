@@ -104,7 +104,6 @@ function App() {
     const [gameWon, setGameWon] = React.useState(false);
     const [pathData, setPathData] = React.useState(null);
     const [burnedPath, setBurnedPath] = React.useState([]);
-    const [fireParticles, setFireParticles] = React.useState([]);
     const [touchStart, setTouchStart] = React.useState(null);
     const [isSwipeSupported, setIsSwipeSupported] = React.useState(false);
     const [hasUserMoved, setHasUserMoved] = React.useState(false); // Track if user has initiated movement
@@ -243,7 +242,6 @@ function App() {
             setGameOver(false);
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
-            setFireParticles([]); // Reset fire particles
             setHasUserMoved(false); // Reset movement flag
         };
 
@@ -335,7 +333,6 @@ function App() {
                 setGameOver(false);
                 setGameWon(false);
                 setBurnedPath([]); // Reset burned path
-                setFireParticles([]); // Reset fire particles
                 setHasUserMoved(false); // Reset movement flag
             }, 50);
         } else {
@@ -355,7 +352,6 @@ function App() {
             setGameOver(false);
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
-            setFireParticles([]); // Reset fire particles
             setHasUserMoved(false); // Reset movement flag
         }
     };
@@ -448,42 +444,6 @@ function App() {
                 y: ballCenterY,
                 burnIntensity: 0.9 + Math.random() * 0.1 // Slight variation in burn intensity
             }];
-        });
-    }, [BALL_SIZE]);
-
-    // Generate fire particles
-    const generateFireParticles = React.useCallback((x, y) => {
-        const ballCenterX = x + BALL_SIZE / 2;
-        const ballCenterY = y + BALL_SIZE / 2;
-        
-        setFireParticles(prevParticles => {
-            const newParticles = [...prevParticles];
-            
-            // Add new fire particles behind the ball
-            for (let i = 0; i < 3; i++) {
-                newParticles.push({
-                    id: Math.random(),
-                    x: ballCenterX + (Math.random() - 0.5) * 15,
-                    y: ballCenterY + (Math.random() - 0.5) * 15,
-                    size: 3 + Math.random() * 4,
-                    life: 1.0,
-                    velocityX: (Math.random() - 0.5) * 2,
-                    velocityY: (Math.random() - 0.5) * 2,
-                    timestamp: Date.now()
-                });
-            }
-            
-            // Update existing particles and remove dead ones
-            const now = Date.now();
-            return newParticles
-                .map(particle => ({
-                    ...particle,
-                    x: particle.x + particle.velocityX,
-                    y: particle.y + particle.velocityY,
-                    life: Math.max(0, particle.life - 0.02),
-                    size: particle.size * 0.98
-                }))
-                .filter(particle => particle.life > 0 && now - particle.timestamp < 1500);
         });
     }, [BALL_SIZE]);
 
@@ -761,10 +721,9 @@ function App() {
 
                     setBallPosition({ x: newX, y: newY });
                     
-                    // Add burned section and fire effects when ball moves
+                    // Add burned section when ball moves
                     if (Math.abs(currentVelocity.x) > 0.1 || Math.abs(currentVelocity.y) > 0.1) {
                         addBurnedSection(newX, newY);
-                        generateFireParticles(newX, newY);
                     }
                     
                     // Check game conditions - only check for falling off path after user has moved
@@ -786,26 +745,7 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, generateFireParticles, hasUserMoved, tiltSupported, tilt]);
-
-    // Animation loop for fire particles
-    React.useEffect(() => {
-        const animationLoop = setInterval(() => {
-            setFireParticles(prevParticles => 
-                prevParticles
-                    .map(particle => ({
-                        ...particle,
-                        x: particle.x + particle.velocityX * 0.5,
-                        y: particle.y + particle.velocityY * 0.5,
-                        life: Math.max(0, particle.life - 0.015),
-                        size: particle.size * 0.99
-                    }))
-                    .filter(particle => particle.life > 0.1)
-            );
-        }, 33); // ~30 FPS for particles
-
-        return () => clearInterval(animationLoop);
-    }, []);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, hasUserMoved, tiltSupported, tilt]);
 
     return (
         <Container style={{ 
@@ -951,25 +891,7 @@ function App() {
                                 <stop offset="80%" stopColor="#A0522D" stopOpacity="0.4" />
                                 <stop offset="100%" stopColor="#D2B48C" stopOpacity="0.2" />
                             </radialGradient>
-                            <radialGradient id="fireGradient" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stopColor="#FFD700" stopOpacity="0.9" />
-                                <stop offset="40%" stopColor="#FF4500" stopOpacity="0.7" />
-                                <stop offset="70%" stopColor="#DC143C" stopOpacity="0.5" />
-                                <stop offset="100%" stopColor="#8B0000" stopOpacity="0.2" />
-                            </radialGradient>
                         </defs>
-                        
-                        {/* Fire particles */}
-                        {fireParticles.map(particle => (
-                            <circle
-                                key={particle.id}
-                                cx={particle.x}
-                                cy={particle.y}
-                                r={particle.size}
-                                fill="url(#fireGradient)"
-                                opacity={particle.life}
-                            />
-                        ))}
                         
                         {/* Start marker */}
                         <circle
@@ -992,7 +914,7 @@ function App() {
                     </svg>
                 )}
                 
-                {/* Ball with fire glow effect */}
+                {/* Ball */}
                 <div style={{
                     width: BALL_SIZE,
                     height: BALL_SIZE,
@@ -1002,12 +924,7 @@ function App() {
                     left: ballPosition.x,
                     top: ballPosition.y,
                     transition: gameOver || gameWon ? 'none' : 'all 0.1s ease',
-                    boxShadow: `
-                        0 2px 4px rgba(0,0,0,0.2),
-                        0 0 20px rgba(255, 69, 0, 0.6),
-                        0 0 40px rgba(255, 140, 0, 0.4),
-                        inset 0 0 10px rgba(255, 215, 0, 0.3)
-                    `,
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
                     zIndex: 10,
                     background: `radial-gradient(circle at 30% 30%, #87CEEB, #007bff, #000080)`
                 }} />
