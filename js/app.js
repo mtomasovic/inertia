@@ -5,7 +5,12 @@ function App() {
     const BASE_WIDTH = 600;
     const BASE_HEIGHT = 400;
     const ASPECT_RATIO = BASE_WIDTH / BASE_HEIGHT; // 1.5:1 ratio
-    const BALL_SIZE = 20;
+    
+    // Detect if we're on a mobile device for sizing adjustments
+    const isMobile = window.innerWidth <= 768 || window.innerHeight <= 768;
+    
+    // Make ball and path much smaller on mobile for better path visibility
+    const BALL_SIZE = isMobile ? 10 : 20; // 50% smaller on mobile (10px vs 20px)
     const BORDER_WIDTH = 3;
     const ACCELERATION = 0.5; // How fast velocity increases when key is held
     const FRICTION = 0.95; // Friction coefficient (0.95 = 5% speed reduction per frame)
@@ -63,9 +68,11 @@ function App() {
             setTimeout(() => {
                 calculateDimensions();
                 // Reset ball position to center after orientation change
+                // Use current ball size for centering
+                const currentBallSize = window.innerWidth <= 768 || window.innerHeight <= 768 ? 10 : 20;
                 setBallPosition({
-                    x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
-                    y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
+                    x: (PLAYABLE_WIDTH - currentBallSize) / 2,
+                    y: (PLAYABLE_HEIGHT - currentBallSize) / 2
                 });
                 // Also reset velocity to prevent weird movement
                 setVelocity({ x: 0, y: 0 });
@@ -94,7 +101,7 @@ function App() {
             x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
             y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
         });
-    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT]);
+    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT, BALL_SIZE]); // Add BALL_SIZE as dependency
     
     const [velocity, setVelocity] = React.useState({ x: 0, y: 0 });
     const [keysPressed, setKeysPressed] = React.useState(new Set());
@@ -104,9 +111,12 @@ function App() {
     const [gameWon, setGameWon] = React.useState(false);
     const [pathData, setPathData] = React.useState(null);
     const [burnedPath, setBurnedPath] = React.useState([]);
-    const [fireParticles, setFireParticles] = React.useState([]);
-    const [touchStart, setTouchStart] = React.useState(null);
-    const [isSwipeSupported, setIsSwipeSupported] = React.useState(false);
+    const [hasUserMoved, setHasUserMoved] = React.useState(false); // Track if user has initiated movement
+    
+    // Virtual joystick state for mobile
+    const [joystickActive, setJoystickActive] = React.useState(false);
+    const [joystickPosition, setJoystickPosition] = React.useState({ x: 0, y: 0 });
+    const [joystickCenter, setJoystickCenter] = React.useState({ x: 0, y: 0 });
 
     // Generate random path
     const generateRandomPath = React.useCallback(() => {
@@ -121,7 +131,10 @@ function App() {
             };
         }
         
-        const PATH_WIDTH = BALL_SIZE + 20; // Wider path for easier gameplay
+        // Detect mobile for sizing adjustments within path generation
+        const isMobileForPath = window.innerWidth <= 768 || window.innerHeight <= 768;
+        
+        const PATH_WIDTH = isMobileForPath ? BALL_SIZE + 8 : BALL_SIZE + 20; // Much narrower path on mobile (18px vs 40px)
         const MIN_SEGMENT_LENGTH = 100; // Longer minimum segments
         const MAX_SEGMENT_LENGTH = 200; // Much longer maximum segments
         const BORDER_BUFFER = Math.max(BALL_SIZE * 2, 40); // Ensure minimum buffer but not too large
@@ -242,7 +255,9 @@ function App() {
             setGameOver(false);
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
-            setFireParticles([]); // Reset fire particles
+            setHasUserMoved(false); // Reset movement flag
+            setJoystickActive(false); // Reset joystick
+            setJoystickPosition({ x: 0, y: 0 });
         };
 
         // Small delay for mobile to ensure dimensions are calculated
@@ -333,7 +348,9 @@ function App() {
                 setGameOver(false);
                 setGameWon(false);
                 setBurnedPath([]); // Reset burned path
-                setFireParticles([]); // Reset fire particles
+                setHasUserMoved(false); // Reset movement flag
+                setJoystickActive(false); // Reset joystick
+                setJoystickPosition({ x: 0, y: 0 });
             }, 50);
         } else {
             // Desktop - immediate reset
@@ -352,73 +369,11 @@ function App() {
             setGameOver(false);
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
-            setFireParticles([]); // Reset fire particles
+            setHasUserMoved(false); // Reset movement flag
+            setJoystickActive(false); // Reset joystick
+            setJoystickPosition({ x: 0, y: 0 });
         }
     };
-
-    // Handle swipe gestures for mobile
-    const handleTouchStart = React.useCallback((e) => {
-        if (!e.touches || e.touches.length === 0) return;
-        
-        const touch = e.touches[0];
-        setTouchStart({
-            x: touch.clientX,
-            y: touch.clientY,
-            timestamp: Date.now()
-        });
-        setIsSwipeSupported(true);
-    }, []);
-
-    const handleTouchEnd = React.useCallback((e) => {
-        if (!touchStart || !e.changedTouches || e.changedTouches.length === 0) return;
-
-        const touch = e.changedTouches[0];
-        const touchEnd = {
-            x: touch.clientX,
-            y: touch.clientY,
-            timestamp: Date.now()
-        };
-
-        const deltaX = touchEnd.x - touchStart.x;
-        const deltaY = touchEnd.y - touchStart.y;
-        const deltaTime = touchEnd.timestamp - touchStart.timestamp;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
-        // Only register as swipe if:
-        // - Distance is significant (minimum 30px)
-        // - Time is reasonable (not too slow, not too fast)
-        // - Not currently in game over/won state
-        if (distance > 30 && deltaTime > 50 && deltaTime < 800 && !gameOver && !gameWon) {
-            // Calculate swipe velocity based on distance and time
-            const baseVelocity = Math.min(distance / deltaTime * 15, 8); // Cap max velocity
-            
-            // Normalize direction
-            const directionX = deltaX / distance;
-            const directionY = deltaY / distance;
-            
-            // Apply velocity boost to current velocity
-            setVelocity(prevVelocity => ({
-                x: prevVelocity.x + (directionX * baseVelocity),
-                y: prevVelocity.y + (directionY * baseVelocity)
-            }));
-        }
-
-        setTouchStart(null);
-    }, [touchStart, gameOver, gameWon]);
-
-    // Add touch event listeners
-    React.useEffect(() => {
-        const gameElement = document.getElementById('game-container');
-        if (gameElement) {
-            gameElement.addEventListener('touchstart', handleTouchStart, { passive: false });
-            gameElement.addEventListener('touchend', handleTouchEnd, { passive: false });
-            
-            return () => {
-                gameElement.removeEventListener('touchstart', handleTouchStart);
-                gameElement.removeEventListener('touchend', handleTouchEnd);
-            };
-        }
-    }, [handleTouchStart, handleTouchEnd]);
 
     // Add burned section to path when ball moves
     const addBurnedSection = React.useCallback((x, y) => {
@@ -442,41 +397,47 @@ function App() {
         });
     }, [BALL_SIZE]);
 
-    // Generate fire particles
-    const generateFireParticles = React.useCallback((x, y) => {
-        const ballCenterX = x + BALL_SIZE / 2;
-        const ballCenterY = y + BALL_SIZE / 2;
+    // Virtual joystick handlers for mobile
+    const handleJoystickStart = React.useCallback((e) => {
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
         
-        setFireParticles(prevParticles => {
-            const newParticles = [...prevParticles];
-            
-            // Add new fire particles behind the ball
-            for (let i = 0; i < 3; i++) {
-                newParticles.push({
-                    id: Math.random(),
-                    x: ballCenterX + (Math.random() - 0.5) * 15,
-                    y: ballCenterY + (Math.random() - 0.5) * 15,
-                    size: 3 + Math.random() * 4,
-                    life: 1.0,
-                    velocityX: (Math.random() - 0.5) * 2,
-                    velocityY: (Math.random() - 0.5) * 2,
-                    timestamp: Date.now()
-                });
-            }
-            
-            // Update existing particles and remove dead ones
-            const now = Date.now();
-            return newParticles
-                .map(particle => ({
-                    ...particle,
-                    x: particle.x + particle.velocityX,
-                    y: particle.y + particle.velocityY,
-                    life: Math.max(0, particle.life - 0.02),
-                    size: particle.size * 0.98
-                }))
-                .filter(particle => particle.life > 0 && now - particle.timestamp < 1500);
-        });
-    }, [BALL_SIZE]);
+        setJoystickCenter({ x: centerX, y: centerY });
+        setJoystickActive(true);
+        setJoystickPosition({ x: 0, y: 0 });
+    }, []);
+
+    const handleJoystickMove = React.useCallback((e) => {
+        if (!joystickActive) return;
+        
+        e.preventDefault();
+        const touch = e.touches ? e.touches[0] : e;
+        const deltaX = touch.clientX - joystickCenter.x;
+        const deltaY = touch.clientY - joystickCenter.y;
+        
+        // Limit joystick movement to a 50px radius
+        const maxDistance = 50;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        if (distance <= maxDistance) {
+            setJoystickPosition({ x: deltaX, y: deltaY });
+        } else {
+            // Constrain to circle boundary
+            const angle = Math.atan2(deltaY, deltaX);
+            setJoystickPosition({
+                x: Math.cos(angle) * maxDistance,
+                y: Math.sin(angle) * maxDistance
+            });
+        }
+    }, [joystickActive, joystickCenter]);
+
+    const handleJoystickEnd = React.useCallback((e) => {
+        e.preventDefault();
+        setJoystickActive(false);
+        setJoystickPosition({ x: 0, y: 0 });
+    }, []);
 
     React.useEffect(() => {
         document.title = "Inertia";
@@ -690,17 +651,44 @@ function App() {
             setVelocity(prevVelocity => {
                 let newVelocityX = prevVelocity.x;
                 let newVelocityY = prevVelocity.y;
+                let userInputDetected = false;
 
                 // Apply acceleration based on pressed keys
-                if (keysPressed.has('w')) newVelocityY -= ACCELERATION;
-                if (keysPressed.has('s')) newVelocityY += ACCELERATION;
-                if (keysPressed.has('a')) newVelocityX -= ACCELERATION;
-                if (keysPressed.has('d')) newVelocityX += ACCELERATION;
+                if (keysPressed.has('w')) {
+                    newVelocityY -= ACCELERATION;
+                    userInputDetected = true;
+                }
+                if (keysPressed.has('s')) {
+                    newVelocityY += ACCELERATION;
+                    userInputDetected = true;
+                }
+                if (keysPressed.has('a')) {
+                    newVelocityX -= ACCELERATION;
+                    userInputDetected = true;
+                }
+                if (keysPressed.has('d')) {
+                    newVelocityX += ACCELERATION;
+                    userInputDetected = true;
+                }
 
                 // Apply acceleration based on device tilt (mobile)
-                if (tiltSupported) {
+                if (tiltSupported && (Math.abs(tilt.x) > 0.1 || Math.abs(tilt.y) > 0.1)) {
                     newVelocityX += tilt.x * ACCELERATION;
                     newVelocityY += tilt.y * ACCELERATION;
+                    userInputDetected = true;
+                }
+
+                // Apply acceleration based on virtual joystick (mobile)
+                if (joystickActive && (Math.abs(joystickPosition.x) > 5 || Math.abs(joystickPosition.y) > 5)) {
+                    const joystickStrength = 0.02; // Adjust sensitivity
+                    newVelocityX += (joystickPosition.x / 50) * ACCELERATION * joystickStrength * 25;
+                    newVelocityY += (joystickPosition.y / 50) * ACCELERATION * joystickStrength * 25;
+                    userInputDetected = true;
+                }
+
+                // Set movement flag if user input detected
+                if (userInputDetected && !hasUserMoved) {
+                    setHasUserMoved(true);
                 }
 
                 // Apply friction to gradually slow down
@@ -733,14 +721,13 @@ function App() {
 
                     setBallPosition({ x: newX, y: newY });
                     
-                    // Add burned section and fire effects when ball moves
+                    // Add burned section when ball moves
                     if (Math.abs(currentVelocity.x) > 0.1 || Math.abs(currentVelocity.y) > 0.1) {
                         addBurnedSection(newX, newY);
-                        generateFireParticles(newX, newY);
                     }
                     
-                    // Check game conditions
-                    if (!isOnPath(newX, newY) && !gameOver && !gameWon) {
+                    // Check game conditions - only check for falling off path after user has moved
+                    if (hasUserMoved && !isOnPath(newX, newY) && !gameOver && !gameWon) {
                         setGameOver(true);
                         return { x: 0, y: 0 }; // Stop movement
                     }
@@ -758,26 +745,7 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, generateFireParticles]);
-
-    // Animation loop for fire particles
-    React.useEffect(() => {
-        const animationLoop = setInterval(() => {
-            setFireParticles(prevParticles => 
-                prevParticles
-                    .map(particle => ({
-                        ...particle,
-                        x: particle.x + particle.velocityX * 0.5,
-                        y: particle.y + particle.velocityY * 0.5,
-                        life: Math.max(0, particle.life - 0.015),
-                        size: particle.size * 0.99
-                    }))
-                    .filter(particle => particle.life > 0.1)
-            );
-        }, 33); // ~30 FPS for particles
-
-        return () => clearInterval(animationLoop);
-    }, []);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, hasUserMoved, tiltSupported, tilt, joystickActive, joystickPosition]);
 
     return (
         <Container style={{ 
@@ -923,25 +891,7 @@ function App() {
                                 <stop offset="80%" stopColor="#A0522D" stopOpacity="0.4" />
                                 <stop offset="100%" stopColor="#D2B48C" stopOpacity="0.2" />
                             </radialGradient>
-                            <radialGradient id="fireGradient" cx="50%" cy="50%" r="50%">
-                                <stop offset="0%" stopColor="#FFD700" stopOpacity="0.9" />
-                                <stop offset="40%" stopColor="#FF4500" stopOpacity="0.7" />
-                                <stop offset="70%" stopColor="#DC143C" stopOpacity="0.5" />
-                                <stop offset="100%" stopColor="#8B0000" stopOpacity="0.2" />
-                            </radialGradient>
                         </defs>
-                        
-                        {/* Fire particles */}
-                        {fireParticles.map(particle => (
-                            <circle
-                                key={particle.id}
-                                cx={particle.x}
-                                cy={particle.y}
-                                r={particle.size}
-                                fill="url(#fireGradient)"
-                                opacity={particle.life}
-                            />
-                        ))}
                         
                         {/* Start marker */}
                         <circle
@@ -964,7 +914,7 @@ function App() {
                     </svg>
                 )}
                 
-                {/* Ball with fire glow effect */}
+                {/* Ball */}
                 <div style={{
                     width: BALL_SIZE,
                     height: BALL_SIZE,
@@ -974,12 +924,7 @@ function App() {
                     left: ballPosition.x,
                     top: ballPosition.y,
                     transition: gameOver || gameWon ? 'none' : 'all 0.1s ease',
-                    boxShadow: `
-                        0 2px 4px rgba(0,0,0,0.2),
-                        0 0 20px rgba(255, 69, 0, 0.6),
-                        0 0 40px rgba(255, 140, 0, 0.4),
-                        inset 0 0 10px rgba(255, 215, 0, 0.3)
-                    `,
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
                     zIndex: 10,
                     background: `radial-gradient(circle at 30% 30%, #87CEEB, #007bff, #000080)`
                 }} />
@@ -1018,13 +963,8 @@ function App() {
                     Guide the ball along the green path from start (blue) to finish (red)
                 </p>
                 <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0', fontSize: '0.85rem' }}>
-                    {window.innerWidth <= 768 ? 'WASD keys or swipe to move' : 'Use WASD keys to move the ball'}
+                    {window.innerWidth <= 768 ? 'Use WASD keys or the virtual joystick below' : 'Use WASD keys to move the ball'}
                 </p>
-                {isSwipeSupported && window.innerWidth > 768 && (
-                    <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic', color: '#28a745' }}>
-                        Swipe to launch the ball in any direction!
-                    </p>
-                )}
                 {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
                     <button 
                         onClick={requestTiltPermission}
@@ -1048,6 +988,63 @@ function App() {
                     </p>
                 )}
             </div>
+            
+            {/* Virtual Joystick for Mobile */}
+            {window.innerWidth <= 768 && (
+                <div style={{
+                    marginTop: '20px',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center'
+                }}>
+                    <div
+                        style={{
+                            width: '120px',
+                            height: '120px',
+                            borderRadius: '50%',
+                            border: '3px solid #666',
+                            backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                            position: 'relative',
+                            touchAction: 'none',
+                            userSelect: 'none'
+                        }}
+                        onTouchStart={handleJoystickStart}
+                        onTouchMove={handleJoystickMove}
+                        onTouchEnd={handleJoystickEnd}
+                        onMouseDown={handleJoystickStart}
+                        onMouseMove={handleJoystickMove}
+                        onMouseUp={handleJoystickEnd}
+                        onMouseLeave={handleJoystickEnd}
+                    >
+                        {/* Joystick knob */}
+                        <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            backgroundColor: joystickActive ? '#007bff' : '#666',
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: `translate(calc(-50% + ${joystickPosition.x}px), calc(-50% + ${joystickPosition.y}px))`,
+                            transition: joystickActive ? 'none' : 'all 0.2s ease',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                            border: '2px solid white'
+                        }} />
+                        
+                        {/* Center dot */}
+                        <div style={{
+                            width: '4px',
+                            height: '4px',
+                            borderRadius: '50%',
+                            backgroundColor: '#999',
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)'
+                        }} />
+                    </div>
+                </div>
+            )}
             
             {/* Game Over Modal */}
             {gameOver && (
