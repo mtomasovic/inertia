@@ -105,12 +105,9 @@ function App() {
     
     const [velocity, setVelocity] = React.useState({ x: 0, y: 0 });
     const [keysPressed, setKeysPressed] = React.useState(new Set());
-    const [tiltSupported, setTiltSupported] = React.useState(false);
-    const [tilt, setTilt] = React.useState({ x: 0, y: 0 });
     const [gameOver, setGameOver] = React.useState(false);
     const [gameWon, setGameWon] = React.useState(false);
     const [pathData, setPathData] = React.useState(null);
-    const [burnedPath, setBurnedPath] = React.useState([]);
     const [hasUserMoved, setHasUserMoved] = React.useState(false); // Track if user has initiated movement
     
     // Virtual joystick state for mobile
@@ -254,7 +251,6 @@ function App() {
             setVelocity({ x: 0, y: 0 });
             setGameOver(false);
             setGameWon(false);
-            setBurnedPath([]); // Reset burned path
             setHasUserMoved(false); // Reset movement flag
             setJoystickActive(false); // Reset joystick
             setJoystickPosition({ x: 0, y: 0 });
@@ -347,7 +343,6 @@ function App() {
                 setVelocity({ x: 0, y: 0 });
                 setGameOver(false);
                 setGameWon(false);
-                setBurnedPath([]); // Reset burned path
                 setHasUserMoved(false); // Reset movement flag
                 setJoystickActive(false); // Reset joystick
                 setJoystickPosition({ x: 0, y: 0 });
@@ -368,34 +363,11 @@ function App() {
             setVelocity({ x: 0, y: 0 });
             setGameOver(false);
             setGameWon(false);
-            setBurnedPath([]); // Reset burned path
             setHasUserMoved(false); // Reset movement flag
             setJoystickActive(false); // Reset joystick
             setJoystickPosition({ x: 0, y: 0 });
         }
     };
-
-    // Add burned section to path when ball moves
-    const addBurnedSection = React.useCallback((x, y) => {
-        const ballCenterX = x + BALL_SIZE / 2;
-        const ballCenterY = y + BALL_SIZE / 2;
-        
-        setBurnedPath(prevBurned => {
-            // Check if this position is already burned (to avoid duplicates)
-            const isAlreadyBurned = prevBurned.some(point => 
-                Math.abs(point.x - ballCenterX) < 5 && Math.abs(point.y - ballCenterY) < 5
-            );
-            
-            if (isAlreadyBurned) return prevBurned;
-            
-            // Add new burned section
-            return [...prevBurned, { 
-                x: ballCenterX, 
-                y: ballCenterY,
-                burnIntensity: 0.9 + Math.random() * 0.1 // Slight variation in burn intensity
-            }];
-        });
-    }, [BALL_SIZE]);
 
     // Virtual joystick handlers for mobile
     const handleJoystickStart = React.useCallback((e) => {
@@ -442,179 +414,6 @@ function App() {
     React.useEffect(() => {
         document.title = "Inertia";
     }, []);
-
-    // Handle device orientation for mobile tilt controls
-    React.useEffect(() => {
-        const handleDeviceOrientation = (event) => {
-            // DeviceOrientationEvent provides:
-            // beta: front-back tilt in degrees (-180 to 180)
-            // gamma: left-right tilt in degrees (-90 to 90)
-            
-            if (event.beta !== null && event.gamma !== null) {
-                const maxTilt = 30; // Maximum tilt angle to consider
-                const sensitivity = 1.2; // Increased sensitivity
-                
-                // Convert tilt to acceleration values
-                // gamma: negative = tilt left, positive = tilt right
-                // beta: negative = tilt away, positive = tilt toward
-                let tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
-                let tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
-                
-                // Adjust for device orientation (landscape vs portrait)
-                if (window.orientation === 90 || window.orientation === -90) {
-                    // Landscape mode - swap and adjust axes
-                    const temp = tiltX;
-                    tiltX = window.orientation === 90 ? tiltY : -tiltY;
-                    tiltY = window.orientation === 90 ? -temp : temp;
-                }
-                
-                setTilt({ x: tiltX, y: tiltY });
-                
-                // Set tilt supported if we're getting valid data
-                if (!tiltSupported) {
-                    setTiltSupported(true);
-                }
-            }
-        };
-
-        const handleDeviceMotion = (event) => {
-            // Fallback to DeviceMotionEvent if orientation doesn't work
-            if (event.accelerationIncludingGravity) {
-                const { x, y } = event.accelerationIncludingGravity;
-                if (x !== null && y !== null) {
-                    const maxAccel = 5; // Maximum acceleration to consider
-                    const sensitivity = 0.3;
-                    
-                    let tiltX = Math.max(-1, Math.min(1, x / maxAccel)) * sensitivity;
-                    let tiltY = Math.max(-1, Math.min(1, -y / maxAccel)) * sensitivity; // Invert Y
-                    
-                    // Adjust for device orientation
-                    if (window.orientation === 90 || window.orientation === -90) {
-                        const temp = tiltX;
-                        tiltX = window.orientation === 90 ? -tiltY : tiltY;
-                        tiltY = window.orientation === 90 ? temp : -temp;
-                    }
-                    
-                    setTilt({ x: tiltX, y: tiltY });
-                    
-                    if (!tiltSupported) {
-                        setTiltSupported(true);
-                    }
-                }
-            }
-        };
-
-        const requestPermission = async () => {
-            let permissionGranted = false;
-            
-            // Check if DeviceOrientationEvent is supported
-            if (typeof DeviceOrientationEvent !== 'undefined') {
-                // For iOS 13+ devices, need to request permission
-                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    // Don't auto-request permission, wait for user interaction
-                    return;
-                } else {
-                    // For other devices, just add the event listener
-                    window.addEventListener('deviceorientation', handleDeviceOrientation, true);
-                    permissionGranted = true;
-                }
-            }
-            
-            // Also try DeviceMotionEvent as fallback
-            if (typeof DeviceMotionEvent !== 'undefined') {
-                if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                    // Don't auto-request permission for motion either
-                } else {
-                    window.addEventListener('devicemotion', handleDeviceMotion, true);
-                    permissionGranted = true;
-                }
-            }
-            
-            // Set a timeout to check if we got any motion data
-            if (permissionGranted) {
-                setTimeout(() => {
-                    // This will be set by the event handlers if they receive data
-                }, 2000);
-            }
-        };
-
-        requestPermission();
-
-        return () => {
-            window.removeEventListener('deviceorientation', handleDeviceOrientation, true);
-            window.removeEventListener('devicemotion', handleDeviceMotion, true);
-        };
-    }, [tiltSupported]);
-
-    // Add click handler for iOS permission request
-    const requestTiltPermission = async () => {
-        let hasPermission = false;
-        
-        // Try DeviceOrientationEvent first
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try {
-                const response = await DeviceOrientationEvent.requestPermission();
-                if (response === 'granted') {
-                    window.addEventListener('deviceorientation', (event) => {
-                        if (event.beta !== null && event.gamma !== null) {
-                            const maxTilt = 30;
-                            const sensitivity = 1.2;
-                            let tiltX = Math.max(-1, Math.min(1, event.gamma / maxTilt)) * sensitivity;
-                            let tiltY = Math.max(-1, Math.min(1, event.beta / maxTilt)) * sensitivity;
-                            
-                            if (window.orientation === 90 || window.orientation === -90) {
-                                const temp = tiltX;
-                                tiltX = window.orientation === 90 ? tiltY : -tiltY;
-                                tiltY = window.orientation === 90 ? -temp : temp;
-                            }
-                            
-                            setTilt({ x: tiltX, y: tiltY });
-                            setTiltSupported(true);
-                        }
-                    }, true);
-                    hasPermission = true;
-                }
-            } catch (error) {
-                console.log('DeviceOrientation permission denied:', error);
-            }
-        }
-        
-        // Try DeviceMotionEvent as fallback
-        if (!hasPermission && typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-            try {
-                const response = await DeviceMotionEvent.requestPermission();
-                if (response === 'granted') {
-                    window.addEventListener('devicemotion', (event) => {
-                        if (event.accelerationIncludingGravity) {
-                            const { x, y } = event.accelerationIncludingGravity;
-                            if (x !== null && y !== null) {
-                                const maxAccel = 5;
-                                const sensitivity = 0.3;
-                                let tiltX = Math.max(-1, Math.min(1, x / maxAccel)) * sensitivity;
-                                let tiltY = Math.max(-1, Math.min(1, -y / maxAccel)) * sensitivity;
-                                
-                                if (window.orientation === 90 || window.orientation === -90) {
-                                    const temp = tiltX;
-                                    tiltX = window.orientation === 90 ? -tiltY : tiltY;
-                                    tiltY = window.orientation === 90 ? temp : -temp;
-                                }
-                                
-                                setTilt({ x: tiltX, y: tiltY });
-                                setTiltSupported(true);
-                            }
-                        }
-                    }, true);
-                    hasPermission = true;
-                }
-            } catch (error) {
-                console.log('DeviceMotion permission denied:', error);
-            }
-        }
-        
-        if (!hasPermission) {
-            alert('Tilt controls require device orientation/motion permissions. Please check your browser settings.');
-        }
-    };
 
     // Handle key press and release
     React.useEffect(() => {
@@ -671,13 +470,6 @@ function App() {
                     userInputDetected = true;
                 }
 
-                // Apply acceleration based on device tilt (mobile)
-                if (tiltSupported && (Math.abs(tilt.x) > 0.1 || Math.abs(tilt.y) > 0.1)) {
-                    newVelocityX += tilt.x * ACCELERATION;
-                    newVelocityY += tilt.y * ACCELERATION;
-                    userInputDetected = true;
-                }
-
                 // Apply acceleration based on virtual joystick (mobile)
                 if (joystickActive && (Math.abs(joystickPosition.x) > 5 || Math.abs(joystickPosition.y) > 5)) {
                     const joystickStrength = 0.02; // Adjust sensitivity
@@ -721,11 +513,6 @@ function App() {
 
                     setBallPosition({ x: newX, y: newY });
                     
-                    // Add burned section when ball moves
-                    if (Math.abs(currentVelocity.x) > 0.1 || Math.abs(currentVelocity.y) > 0.1) {
-                        addBurnedSection(newX, newY);
-                    }
-                    
                     // Check game conditions - only check for falling off path after user has moved
                     if (hasUserMoved && !isOnPath(newX, newY) && !gameOver && !gameWon) {
                         setGameOver(true);
@@ -745,7 +532,7 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, hasUserMoved, tiltSupported, tilt, joystickActive, joystickPosition]);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, hasUserMoved, joystickActive, joystickPosition]);
 
     return (
         <Container style={{ 
@@ -861,19 +648,7 @@ function App() {
                             opacity="0.3"
                         />
                         
-                        {/* Burned trail effect */}
-                        {burnedPath.length > 0 && burnedPath.map((burnSpot, index) => (
-                            <circle
-                                key={index}
-                                cx={burnSpot.x}
-                                cy={burnSpot.y}
-                                r={pathData.width / 3}
-                                fill="url(#burnedGrassGradient)"
-                                opacity={burnSpot.burnIntensity}
-                            />
-                        ))}
-                        
-                        {/* Gradient definitions for burned effect */}
+                        {/* Gradient definitions for effects */}
                         <defs>
                             {/* Path glow filter */}
                             <filter id="pathGlow" x="-50%" y="-50%" width="200%" height="200%">
@@ -883,14 +658,6 @@ function App() {
                                     <feMergeNode in="SourceGraphic"/>
                                 </feMerge>
                             </filter>
-                            
-                            <radialGradient id="burnedGrassGradient" cx="50%" cy="50%" r="60%">
-                                <stop offset="0%" stopColor="#2F1B14" stopOpacity="0.9" />
-                                <stop offset="30%" stopColor="#654321" stopOpacity="0.8" />
-                                <stop offset="60%" stopColor="#8B4513" stopOpacity="0.6" />
-                                <stop offset="80%" stopColor="#A0522D" stopOpacity="0.4" />
-                                <stop offset="100%" stopColor="#D2B48C" stopOpacity="0.2" />
-                            </radialGradient>
                         </defs>
                         
                         {/* Start marker */}
@@ -965,28 +732,6 @@ function App() {
                 <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0', fontSize: '0.85rem' }}>
                     {window.innerWidth <= 768 ? 'Use WASD keys or the virtual joystick below' : 'Use WASD keys to move the ball'}
                 </p>
-                {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
-                    <button 
-                        onClick={requestTiltPermission}
-                        style={{
-                            marginTop: window.innerWidth <= 768 ? '5px' : '10px',
-                            padding: window.innerWidth <= 768 ? '8px 16px' : '10px 20px',
-                            backgroundColor: '#007bff',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                            fontSize: window.innerWidth <= 768 ? '0.85rem' : '1rem'
-                        }}
-                    >
-                        Enable Tilt Controls
-                    </button>
-                )}
-                {tiltSupported && window.innerWidth > 768 && (
-                    <p style={{ margin: '5px 0', fontSize: '0.9rem', fontStyle: 'italic' }}>
-                        Tilt controls enabled - tilt your device to move
-                    </p>
-                )}
             </div>
             
             {/* Virtual Joystick for Mobile */}
