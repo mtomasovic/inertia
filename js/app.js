@@ -107,6 +107,7 @@ function App() {
     const [fireParticles, setFireParticles] = React.useState([]);
     const [touchStart, setTouchStart] = React.useState(null);
     const [isSwipeSupported, setIsSwipeSupported] = React.useState(false);
+    const [hasUserMoved, setHasUserMoved] = React.useState(false); // Track if user has initiated movement
 
     // Generate random path
     const generateRandomPath = React.useCallback(() => {
@@ -243,6 +244,7 @@ function App() {
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
             setFireParticles([]); // Reset fire particles
+            setHasUserMoved(false); // Reset movement flag
         };
 
         // Small delay for mobile to ensure dimensions are calculated
@@ -334,6 +336,7 @@ function App() {
                 setGameWon(false);
                 setBurnedPath([]); // Reset burned path
                 setFireParticles([]); // Reset fire particles
+                setHasUserMoved(false); // Reset movement flag
             }, 50);
         } else {
             // Desktop - immediate reset
@@ -353,6 +356,7 @@ function App() {
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
             setFireParticles([]); // Reset fire particles
+            setHasUserMoved(false); // Reset movement flag
         }
     };
 
@@ -401,10 +405,15 @@ function App() {
                 x: prevVelocity.x + (directionX * baseVelocity),
                 y: prevVelocity.y + (directionY * baseVelocity)
             }));
+            
+            // Set movement flag for swipe input
+            if (!hasUserMoved) {
+                setHasUserMoved(true);
+            }
         }
 
         setTouchStart(null);
-    }, [touchStart, gameOver, gameWon]);
+    }, [touchStart, gameOver, gameWon, hasUserMoved]);
 
     // Add touch event listeners
     React.useEffect(() => {
@@ -690,17 +699,36 @@ function App() {
             setVelocity(prevVelocity => {
                 let newVelocityX = prevVelocity.x;
                 let newVelocityY = prevVelocity.y;
+                let userInputDetected = false;
 
                 // Apply acceleration based on pressed keys
-                if (keysPressed.has('w')) newVelocityY -= ACCELERATION;
-                if (keysPressed.has('s')) newVelocityY += ACCELERATION;
-                if (keysPressed.has('a')) newVelocityX -= ACCELERATION;
-                if (keysPressed.has('d')) newVelocityX += ACCELERATION;
+                if (keysPressed.has('w')) {
+                    newVelocityY -= ACCELERATION;
+                    userInputDetected = true;
+                }
+                if (keysPressed.has('s')) {
+                    newVelocityY += ACCELERATION;
+                    userInputDetected = true;
+                }
+                if (keysPressed.has('a')) {
+                    newVelocityX -= ACCELERATION;
+                    userInputDetected = true;
+                }
+                if (keysPressed.has('d')) {
+                    newVelocityX += ACCELERATION;
+                    userInputDetected = true;
+                }
 
                 // Apply acceleration based on device tilt (mobile)
-                if (tiltSupported) {
+                if (tiltSupported && (Math.abs(tilt.x) > 0.1 || Math.abs(tilt.y) > 0.1)) {
                     newVelocityX += tilt.x * ACCELERATION;
                     newVelocityY += tilt.y * ACCELERATION;
+                    userInputDetected = true;
+                }
+
+                // Set movement flag if user input detected
+                if (userInputDetected && !hasUserMoved) {
+                    setHasUserMoved(true);
                 }
 
                 // Apply friction to gradually slow down
@@ -739,8 +767,8 @@ function App() {
                         generateFireParticles(newX, newY);
                     }
                     
-                    // Check game conditions
-                    if (!isOnPath(newX, newY) && !gameOver && !gameWon) {
+                    // Check game conditions - only check for falling off path after user has moved
+                    if (hasUserMoved && !isOnPath(newX, newY) && !gameOver && !gameWon) {
                         setGameOver(true);
                         return { x: 0, y: 0 }; // Stop movement
                     }
@@ -758,7 +786,7 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, generateFireParticles]);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, generateFireParticles, hasUserMoved, tiltSupported, tilt]);
 
     // Animation loop for fire particles
     React.useEffect(() => {
