@@ -5,7 +5,12 @@ function App() {
     const BASE_WIDTH = 600;
     const BASE_HEIGHT = 400;
     const ASPECT_RATIO = BASE_WIDTH / BASE_HEIGHT; // 1.5:1 ratio
-    const BALL_SIZE = 20;
+    
+    // Detect if we're on a mobile device for sizing adjustments
+    const isMobile = window.innerWidth <= 768 || window.innerHeight <= 768;
+    
+    // Make ball and path much smaller on mobile for better path visibility
+    const BALL_SIZE = isMobile ? 10 : 20; // 50% smaller on mobile (10px vs 20px)
     const BORDER_WIDTH = 3;
     const ACCELERATION = 0.5; // How fast velocity increases when key is held
     const FRICTION = 0.95; // Friction coefficient (0.95 = 5% speed reduction per frame)
@@ -63,9 +68,11 @@ function App() {
             setTimeout(() => {
                 calculateDimensions();
                 // Reset ball position to center after orientation change
+                // Use current ball size for centering
+                const currentBallSize = window.innerWidth <= 768 || window.innerHeight <= 768 ? 10 : 20;
                 setBallPosition({
-                    x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
-                    y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
+                    x: (PLAYABLE_WIDTH - currentBallSize) / 2,
+                    y: (PLAYABLE_HEIGHT - currentBallSize) / 2
                 });
                 // Also reset velocity to prevent weird movement
                 setVelocity({ x: 0, y: 0 });
@@ -94,7 +101,7 @@ function App() {
             x: (PLAYABLE_WIDTH - BALL_SIZE) / 2,
             y: (PLAYABLE_HEIGHT - BALL_SIZE) / 2
         });
-    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT]);
+    }, [PLAYABLE_WIDTH, PLAYABLE_HEIGHT, BALL_SIZE]); // Add BALL_SIZE as dependency
     
     const [velocity, setVelocity] = React.useState({ x: 0, y: 0 });
     const [keysPressed, setKeysPressed] = React.useState(new Set());
@@ -124,7 +131,10 @@ function App() {
             };
         }
         
-        const PATH_WIDTH = BALL_SIZE + 20; // Wider path for easier gameplay
+        // Detect mobile for sizing adjustments within path generation
+        const isMobileForPath = window.innerWidth <= 768 || window.innerHeight <= 768;
+        
+        const PATH_WIDTH = isMobileForPath ? BALL_SIZE + 8 : BALL_SIZE + 20; // Much narrower path on mobile (18px vs 40px)
         const MIN_SEGMENT_LENGTH = 100; // Longer minimum segments
         const MAX_SEGMENT_LENGTH = 200; // Much longer maximum segments
         const BORDER_BUFFER = Math.max(BALL_SIZE * 2, 40); // Ensure minimum buffer but not too large

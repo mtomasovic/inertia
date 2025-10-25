@@ -12,7 +12,8 @@ Inertia is a physics-based puzzle game where you control a ball with realistic i
 - **🕹️ Virtual Joystick**: Intuitive gamepad-style joystick control for mobile devices
 - **🔥 Burned Trail Effects**: Watch as your ball burns the path behind it, leaving a permanent trail of scorched earth
 - **🌌 Dangerous Abyss**: Non-path areas feature an animated dark void with floating danger particles
-- **📱 Responsive Design**: Fully responsive gameplay that adapts to different screen sizes and orientations
+- **📱 Responsive Design**: Fully responsive gameplay that adapts to different screen sizes and orientations with mobile-optimized scaling
+- **📱 Mobile Optimization**: Smaller ball and path sizes on mobile devices for better path visibility and navigation
 - **🎯 Random Path Generation**: Each game features a unique, procedurally generated path
 - **⚡ Realistic Physics**: Ball movement includes acceleration, friction, and inertia for authentic feel
 - **🪶 Lightweight Performance**: Optimized for smooth gameplay on all devices
@@ -40,6 +41,7 @@ This game is **purely AI-generated content** created entirely through AI prompti
 - Built with React and Bootstrap
 - Uses SVG for graphics and effects
 - Responsive CSS with viewport adaptations
+- Mobile-optimized scaling: 50% smaller ball (10px vs 20px) and proportionally thinner paths on mobile devices
 - Device orientation/motion API integration for mobile tilt controls
 - Custom virtual joystick with touch/mouse event handling
 - Gamepad-style proportional control system
