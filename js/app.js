@@ -105,6 +105,11 @@ function App() {
     const [pathData, setPathData] = React.useState(null);
     const [burnedPath, setBurnedPath] = React.useState([]);
     const [hasUserMoved, setHasUserMoved] = React.useState(false); // Track if user has initiated movement
+    
+    // Virtual joystick state for mobile
+    const [joystickActive, setJoystickActive] = React.useState(false);
+    const [joystickPosition, setJoystickPosition] = React.useState({ x: 0, y: 0 });
+    const [joystickCenter, setJoystickCenter] = React.useState({ x: 0, y: 0 });
 
     // Generate random path
     const generateRandomPath = React.useCallback(() => {
@@ -241,6 +246,8 @@ function App() {
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
             setHasUserMoved(false); // Reset movement flag
+            setJoystickActive(false); // Reset joystick
+            setJoystickPosition({ x: 0, y: 0 });
         };
 
         // Small delay for mobile to ensure dimensions are calculated
@@ -332,6 +339,8 @@ function App() {
                 setGameWon(false);
                 setBurnedPath([]); // Reset burned path
                 setHasUserMoved(false); // Reset movement flag
+                setJoystickActive(false); // Reset joystick
+                setJoystickPosition({ x: 0, y: 0 });
             }, 50);
         } else {
             // Desktop - immediate reset
@@ -351,6 +360,8 @@ function App() {
             setGameWon(false);
             setBurnedPath([]); // Reset burned path
             setHasUserMoved(false); // Reset movement flag
+            setJoystickActive(false); // Reset joystick
+            setJoystickPosition({ x: 0, y: 0 });
         }
     };
 
@@ -375,6 +386,48 @@ function App() {
             }];
         });
     }, [BALL_SIZE]);
+
+    // Virtual joystick handlers for mobile
+    const handleJoystickStart = React.useCallback((e) => {
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        setJoystickCenter({ x: centerX, y: centerY });
+        setJoystickActive(true);
+        setJoystickPosition({ x: 0, y: 0 });
+    }, []);
+
+    const handleJoystickMove = React.useCallback((e) => {
+        if (!joystickActive) return;
+        
+        e.preventDefault();
+        const touch = e.touches ? e.touches[0] : e;
+        const deltaX = touch.clientX - joystickCenter.x;
+        const deltaY = touch.clientY - joystickCenter.y;
+        
+        // Limit joystick movement to a 50px radius
+        const maxDistance = 50;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        if (distance <= maxDistance) {
+            setJoystickPosition({ x: deltaX, y: deltaY });
+        } else {
+            // Constrain to circle boundary
+            const angle = Math.atan2(deltaY, deltaX);
+            setJoystickPosition({
+                x: Math.cos(angle) * maxDistance,
+                y: Math.sin(angle) * maxDistance
+            });
+        }
+    }, [joystickActive, joystickCenter]);
+
+    const handleJoystickEnd = React.useCallback((e) => {
+        e.preventDefault();
+        setJoystickActive(false);
+        setJoystickPosition({ x: 0, y: 0 });
+    }, []);
 
     React.useEffect(() => {
         document.title = "Inertia";
@@ -615,6 +668,14 @@ function App() {
                     userInputDetected = true;
                 }
 
+                // Apply acceleration based on virtual joystick (mobile)
+                if (joystickActive && (Math.abs(joystickPosition.x) > 5 || Math.abs(joystickPosition.y) > 5)) {
+                    const joystickStrength = 0.02; // Adjust sensitivity
+                    newVelocityX += (joystickPosition.x / 50) * ACCELERATION * joystickStrength * 25;
+                    newVelocityY += (joystickPosition.y / 50) * ACCELERATION * joystickStrength * 25;
+                    userInputDetected = true;
+                }
+
                 // Set movement flag if user input detected
                 if (userInputDetected && !hasUserMoved) {
                     setHasUserMoved(true);
@@ -674,7 +735,7 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, hasUserMoved, tiltSupported, tilt]);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, hasUserMoved, tiltSupported, tilt, joystickActive, joystickPosition]);
 
     return (
         <Container style={{ 
@@ -892,7 +953,7 @@ function App() {
                     Guide the ball along the green path from start (blue) to finish (red)
                 </p>
                 <p style={{ margin: window.innerWidth <= 768 ? '2px 0' : '5px 0', fontSize: '0.85rem' }}>
-                    Use WASD keys to move the ball
+                    {window.innerWidth <= 768 ? 'Use WASD keys or the virtual joystick below' : 'Use WASD keys to move the ball'}
                 </p>
                 {!tiltSupported && (typeof DeviceOrientationEvent !== 'undefined' || typeof DeviceMotionEvent !== 'undefined') && (
                     <button 
@@ -917,6 +978,63 @@ function App() {
                     </p>
                 )}
             </div>
+            
+            {/* Virtual Joystick for Mobile */}
+            {window.innerWidth <= 768 && (
+                <div style={{
+                    marginTop: '20px',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center'
+                }}>
+                    <div
+                        style={{
+                            width: '120px',
+                            height: '120px',
+                            borderRadius: '50%',
+                            border: '3px solid #666',
+                            backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                            position: 'relative',
+                            touchAction: 'none',
+                            userSelect: 'none'
+                        }}
+                        onTouchStart={handleJoystickStart}
+                        onTouchMove={handleJoystickMove}
+                        onTouchEnd={handleJoystickEnd}
+                        onMouseDown={handleJoystickStart}
+                        onMouseMove={handleJoystickMove}
+                        onMouseUp={handleJoystickEnd}
+                        onMouseLeave={handleJoystickEnd}
+                    >
+                        {/* Joystick knob */}
+                        <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            backgroundColor: joystickActive ? '#007bff' : '#666',
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: `translate(calc(-50% + ${joystickPosition.x}px), calc(-50% + ${joystickPosition.y}px))`,
+                            transition: joystickActive ? 'none' : 'all 0.2s ease',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                            border: '2px solid white'
+                        }} />
+                        
+                        {/* Center dot */}
+                        <div style={{
+                            width: '4px',
+                            height: '4px',
+                            borderRadius: '50%',
+                            backgroundColor: '#999',
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)'
+                        }} />
+                    </div>
+                </div>
+            )}
             
             {/* Game Over Modal */}
             {gameOver && (
