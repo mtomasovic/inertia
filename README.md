@@ -10,13 +10,12 @@ Inertia is a physics-based puzzle game where you control a ball with realistic i
 
 - **🎮 Dual Controls**: Play with WASD keys or virtual joystick on mobile devices
 - **🕹️ Virtual Joystick**: Intuitive gamepad-style joystick control for mobile devices
-- **🔥 Burned Trail Effects**: Watch as your ball burns the path behind it, leaving a permanent trail of scorched earth
 - **🌌 Dangerous Abyss**: Non-path areas feature an animated dark void with floating danger particles
 - **📱 Responsive Design**: Fully responsive gameplay that adapts to different screen sizes and orientations with mobile-optimized scaling
 - **📱 Mobile Optimization**: Smaller ball and path sizes on mobile devices for better path visibility and navigation
 - **🎯 Random Path Generation**: Each game features a unique, procedurally generated path
 - **⚡ Realistic Physics**: Ball movement includes acceleration, friction, and inertia for authentic feel
-- **🪶 Lightweight Performance**: Optimized for smooth gameplay on all devices
+- **🪶 Lightweight Performance**: Optimized for smooth gameplay on all devices, especially slower mobile phones
 
 ## How to Play
 
@@ -27,7 +26,6 @@ Inertia is a physics-based puzzle game where you control a ball with realistic i
    - **Mobile**: Use the virtual joystick below the game area for gamepad-style control
 4. **Avoid the Abyss**: Stay on the path! The dark areas surrounding the path are dangerous
 5. **Reach the Goal**: Make it to the red ending marker to win
-6. **Leave Your Mark**: Watch your burned trail mark the path as you progress
 
 ## AI Slop Notice 🤖
 
@@ -43,7 +41,7 @@ This game is **purely AI-generated content** created entirely through AI prompti
 - Mobile-optimized scaling: 50% smaller ball (10px vs 20px) and proportionally thinner paths on mobile devices
 - Custom virtual joystick with touch/mouse event handling
 - Gamepad-style proportional control system
-- Optimized performance without heavy particle systems
+- Optimized performance without heavy visual effects or particle systems
 - Clean, lightweight codebase for smooth gameplay
 
 ## Running the Game

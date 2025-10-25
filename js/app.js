@@ -108,7 +108,6 @@ function App() {
     const [gameOver, setGameOver] = React.useState(false);
     const [gameWon, setGameWon] = React.useState(false);
     const [pathData, setPathData] = React.useState(null);
-    const [burnedPath, setBurnedPath] = React.useState([]);
     const [hasUserMoved, setHasUserMoved] = React.useState(false); // Track if user has initiated movement
     
     // Virtual joystick state for mobile
@@ -252,7 +251,6 @@ function App() {
             setVelocity({ x: 0, y: 0 });
             setGameOver(false);
             setGameWon(false);
-            setBurnedPath([]); // Reset burned path
             setHasUserMoved(false); // Reset movement flag
             setJoystickActive(false); // Reset joystick
             setJoystickPosition({ x: 0, y: 0 });
@@ -345,7 +343,6 @@ function App() {
                 setVelocity({ x: 0, y: 0 });
                 setGameOver(false);
                 setGameWon(false);
-                setBurnedPath([]); // Reset burned path
                 setHasUserMoved(false); // Reset movement flag
                 setJoystickActive(false); // Reset joystick
                 setJoystickPosition({ x: 0, y: 0 });
@@ -366,34 +363,11 @@ function App() {
             setVelocity({ x: 0, y: 0 });
             setGameOver(false);
             setGameWon(false);
-            setBurnedPath([]); // Reset burned path
             setHasUserMoved(false); // Reset movement flag
             setJoystickActive(false); // Reset joystick
             setJoystickPosition({ x: 0, y: 0 });
         }
     };
-
-    // Add burned section to path when ball moves
-    const addBurnedSection = React.useCallback((x, y) => {
-        const ballCenterX = x + BALL_SIZE / 2;
-        const ballCenterY = y + BALL_SIZE / 2;
-        
-        setBurnedPath(prevBurned => {
-            // Check if this position is already burned (to avoid duplicates)
-            const isAlreadyBurned = prevBurned.some(point => 
-                Math.abs(point.x - ballCenterX) < 5 && Math.abs(point.y - ballCenterY) < 5
-            );
-            
-            if (isAlreadyBurned) return prevBurned;
-            
-            // Add new burned section
-            return [...prevBurned, { 
-                x: ballCenterX, 
-                y: ballCenterY,
-                burnIntensity: 0.9 + Math.random() * 0.1 // Slight variation in burn intensity
-            }];
-        });
-    }, [BALL_SIZE]);
 
     // Virtual joystick handlers for mobile
     const handleJoystickStart = React.useCallback((e) => {
@@ -539,11 +513,6 @@ function App() {
 
                     setBallPosition({ x: newX, y: newY });
                     
-                    // Add burned section when ball moves
-                    if (Math.abs(currentVelocity.x) > 0.1 || Math.abs(currentVelocity.y) > 0.1) {
-                        addBurnedSection(newX, newY);
-                    }
-                    
                     // Check game conditions - only check for falling off path after user has moved
                     if (hasUserMoved && !isOnPath(newX, newY) && !gameOver && !gameWon) {
                         setGameOver(true);
@@ -563,7 +532,7 @@ function App() {
         }, 16); // ~60 FPS
 
         return () => clearInterval(gameLoop);
-    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, addBurnedSection, hasUserMoved, joystickActive, joystickPosition]);
+    }, [keysPressed, isOnPath, hasReachedEnd, gameOver, gameWon, hasUserMoved, joystickActive, joystickPosition]);
 
     return (
         <Container style={{ 
@@ -679,19 +648,7 @@ function App() {
                             opacity="0.3"
                         />
                         
-                        {/* Burned trail effect */}
-                        {burnedPath.length > 0 && burnedPath.map((burnSpot, index) => (
-                            <circle
-                                key={index}
-                                cx={burnSpot.x}
-                                cy={burnSpot.y}
-                                r={pathData.width / 3}
-                                fill="url(#burnedGrassGradient)"
-                                opacity={burnSpot.burnIntensity}
-                            />
-                        ))}
-                        
-                        {/* Gradient definitions for burned effect */}
+                        {/* Gradient definitions for effects */}
                         <defs>
                             {/* Path glow filter */}
                             <filter id="pathGlow" x="-50%" y="-50%" width="200%" height="200%">
@@ -701,14 +658,6 @@ function App() {
                                     <feMergeNode in="SourceGraphic"/>
                                 </feMerge>
                             </filter>
-                            
-                            <radialGradient id="burnedGrassGradient" cx="50%" cy="50%" r="60%">
-                                <stop offset="0%" stopColor="#2F1B14" stopOpacity="0.9" />
-                                <stop offset="30%" stopColor="#654321" stopOpacity="0.8" />
-                                <stop offset="60%" stopColor="#8B4513" stopOpacity="0.6" />
-                                <stop offset="80%" stopColor="#A0522D" stopOpacity="0.4" />
-                                <stop offset="100%" stopColor="#D2B48C" stopOpacity="0.2" />
-                            </radialGradient>
                         </defs>
                         
                         {/* Start marker */}
